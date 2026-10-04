@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary-color: #000; --accent-color: #2196F3; --bg-color: #f5f5f5; }
+    body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    h2 { text-align: center; color: #333; margin-top: 0; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; font-weight: bold; margin-bottom: 8px; color: #555; }
+    select, input[type="number"], input[type="text"] { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    
+    .moneda-selector { display: flex; gap: 10px; margin-bottom: 20px; }
+    .moneda-btn { flex: 1; padding: 12px; text-align: center; border: 2px solid #ddd; border-radius: 4px; cursor: pointer; font-weight: bold; color: #666; background: white;}
+    .moneda-btn.active { border-color: var(--accent-color); background-color: #e3f2fd; color: var(--accent-color); }
+    
+    #pesos-group { display: none; background: #fafafa; padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 20px;}
+    
+    .btn-enviar { width: 100%; padding: 14px; background: var(--accent-color); color: white; border: none; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 10px;}
+    .btn-enviar:disabled { background: #ccc; cursor: not-allowed; }
+    
+    .btn-volver { display: block; text-align: center; margin-top: 20px; color: #666; text-decoration: none; font-size: 14px;}
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>💰 Registrar Pago</h2>
+  
+  <div class="form-group">
+    <label>1. Seleccionar Cliente:</label>
+    <select id="select-cliente">
+      <option value="">Cargando clientes...</option>
+    </select>
+  </div>
+
+  <label>2. Moneda del Pago:</label>
+  <div class="moneda-selector">
+    <div class="moneda-btn active" id="btn-usd" onclick="cambiarMoneda('USD')">Dólares (USD)</div>
+    <div class="moneda-btn" id="btn-ars" onclick="cambiarMoneda('ARS')">Pesos (ARS)</div>
+  </div>
+
+  <!-- Grupo USD -->
+  <div id="usd-group" class="form-group">
+    <label>Monto recibido (USD):</label>
+    <input type="number" id="monto-usd" placeholder="Ej: 450" step="0.01">
+  </div>
+
+  <!-- Grupo Pesos (Oculto por defecto) -->
+  <div id="pesos-group">
+    <div class="form-group">
+      <label>Monto recibido (Pesos):</label>
+      <input type="number" id="monto-ars" placeholder="Ej: 576000">
+    </div>
+    <div class="form-group">
+      <label>Cotización del Dólar tomada:</label>
+      <input type="number" id="cotiz-ars" placeholder="Ej: 1440">
+    </div>
+    <div class="form-group">
+      <label>¿A dónde fue el dinero? (Detalle/Recaudadora):</label>
+      <input type="text" id="detalle-ars" placeholder="Ej: Se lo di a Colo">
+    </div>
+    
+    <div style="text-align:right; font-size:14px; color:#666; margin-top:5px;">
+      Total a descontar en cuenta: <strong style="color:green;" id="preview-usd">$0.00 USD</strong>
+    </div>
+  </div>
+
+  <button class="btn-enviar" id="btn-guardar" onclick="enviarPago()">Asentar Pago en Excel</button>
+  
+  <a href="<?= ScriptApp.getService().getUrl() ?>" class="btn-volver">⬅ Volver al Catálogo</a>
+</div>
+
+<script>
+  var monedaActual = 'USD';
+
+  window.onload = function() {
+    google.script.run
+      .withSuccessHandler(function(clientes) {
+        var select = document.getElementById('select-cliente');
+        select.innerHTML = '<option value="">-- Elegir cliente --</option>';
+        clientes.forEach(c => select.innerHTML += '<option value="'+c+'">'+c+'</option>');
+      })
+      .obtenerClientes();
+
+    // Event listeners para calcular preview en vivo
+    document.getElementById('monto-ars').addEventListener('input', calcularPreview);
+    document.getElementById('cotiz-ars').addEventListener('input', calcularPreview);
+  };
+
+  function cambiarMoneda(moneda) {
+    monedaActual = moneda;
+    document.getElementById('btn-usd').className = moneda === 'USD' ? 'moneda-btn active' : 'moneda-btn';
+    document.getElementById('btn-ars').className = moneda === 'ARS' ? 'moneda-btn active' : 'moneda-btn';
+    
+    document.getElementById('usd-group').style.display = moneda === 'USD' ? 'block' : 'none';
+    document.getElementById('pesos-group').style.display = moneda === 'ARS' ? 'block' : 'none';
+  }
+
+  function calcularPreview() {
+    var pesos = parseFloat(document.getElementById('monto-ars').value) || 0;
+    var cotiz = parseFloat(document.getElementById('cotiz-ars').value) || 0;
+    var preview = document.getElementById('preview-usd');
+    
+    if (pesos > 0 && cotiz > 0) {
+      var dolares = (pesos / cotiz).toFixed(2);
+      preview.innerText = "$" + dolares + " USD";
+    } else {
+      preview.innerText = "$0.00 USD";
+    }
+  }
+
+  function enviarPago() {
+    var cliente = document.getElementById('select-cliente').value;
+    if (!cliente) { alert("Elegí un cliente."); return; }
+
+    var datosPago = { cliente: cliente, moneda: monedaActual };
+
+    if (monedaActual === 'USD') {
+      var montoUsd = parseFloat(document.getElementById('monto-usd').value);
+      if (!montoUsd || montoUsd <= 0) { alert("Ingresá un monto válido en dólares."); return; }
+      datosPago.monto = montoUsd;
+    } else {
+      var montoArs = parseFloat(document.getElementById('monto-ars').value);
+      var cotiz = parseFloat(document.getElementById('cotiz-ars').value);
+      var detalle = document.getElementById('detalle-ars').value || "-";
+      
+      if (!montoArs || montoArs <= 0 || !cotiz || cotiz <= 0) {
+        alert("Completá los Pesos y la Cotización correctamente."); return;
+      }
+      datosPago.monto = montoArs;
+      datosPago.cotizacion = cotiz;
+      datosPago.detalle = detalle;
+    }
+
+    if (!confirm("¿Asentar este pago en la cuenta de " + cliente + "?")) return;
+
+    var btn = document.getElementById('btn-guardar');
+    btn.disabled = true;
+    btn.innerText = "Guardando...";
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res === "OK") {
+          alert("✅ Pago registrado en la cuenta de " + cliente);
+          location.reload();
+        }
+      })
+      .withFailureHandler(function(err) {
+        alert("Error: " + err.message);
+        btn.disabled = false;
+        btn.innerText = "Asentar Pago en Excel";
+      })
+      .registrarPago(datosPago);
+  }
+</script>
+
+</body>
+</html>

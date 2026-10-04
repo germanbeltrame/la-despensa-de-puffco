@@ -1,0 +1,7 @@
+streamlit
+supabase
+pandas
+python-dotenv
+streamlit-option-menu
+openpyxl
+fpdf2

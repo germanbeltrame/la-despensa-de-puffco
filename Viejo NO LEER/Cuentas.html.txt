@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary-color: #000; --accent-color: #FF9800; --bg-color: #f5f5f5; }
+    body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    h2 { text-align: center; color: #333; margin-top: 0; }
+    
+    .cliente-box { margin-bottom: 20px; }
+    label { display: block; font-weight: bold; margin-bottom: 8px; color: #555; }
+    select { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; margin-bottom: 15px;}
+    
+    .btn-consultar { width: 100%; padding: 12px; background: var(--accent-color); color: white; border: none; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer;}
+    .btn-consultar:disabled { background: #ccc; cursor: not-allowed; }
+    
+    .btn-volver { display: block; text-align: center; margin-top: 25px; color: #666; text-decoration: none; font-size: 14px;}
+    
+    /* Estilos de la Tabla */
+    .table-container { overflow-x: auto; margin-top: 20px; display: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+    th, td { padding: 12px 10px; text-align: right; border-bottom: 1px solid #eee; }
+    th { background-color: #f8f8f8; color: #333; font-weight: bold; border-bottom: 2px solid #ddd; }
+    th:nth-child(1), td:nth-child(1) { text-align: left; white-space: nowrap; } /* Fecha */
+    th:nth-child(2), td:nth-child(2) { text-align: left; } /* Detalle */
+    
+    .saldo-card { background: #fff; border: 2px solid #eee; border-radius: 8px; padding: 15px; text-align: center; margin-top: 20px; display: none; }
+    .saldo-monto { font-size: 28px; font-weight: bold; margin-top: 5px; }
+    
+    /* Colores dinámicos */
+    .deuda { color: #d32f2f; }
+    .a-favor { color: #388e3c; }
+    .cargo { color: #d32f2f; }
+    .abono { color: #388e3c; }
+
+    #loader { text-align: center; margin-top: 20px; color: #666; display: none; font-weight: bold;}
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>📄 Estado de Cuenta</h2>
+  
+  <div class="cliente-box">
+    <label>Seleccionar Cliente:</label>
+    <select id="select-cliente">
+      <option value="">Cargando clientes...</option>
+    </select>
+    <button class="btn-consultar" id="btn-consultar" onclick="consultarCuenta()">Ver Movimientos</button>
+  </div>
+
+  <div id="loader">Buscando y ordenando movimientos en el sistema... ⏳</div>
+
+  <!-- Tarjeta con el Saldo Total (Arriba de todo) -->
+  <div class="saldo-card" id="saldo-card">
+    <div style="color: #666; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Saldo Actual al día de hoy</div>
+    <div class="saldo-monto" id="saldo-total">$0.00</div>
+  </div>
+
+  <!-- Tabla del historial -->
+  <div class="table-container" id="tabla-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Detalle</th>
+          <th>Cargo (Deuda)</th>
+          <th>Abono (Pago)</th>
+          <th>Saldo</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <!-- Las filas se llenan desde Google Script -->
+      </tbody>
+    </table>
+  </div>
+  
+  <a href="<?= ScriptApp.getService().getUrl() ?>" class="btn-volver">⬅ Volver al Catálogo</a>
+</div>
+
+<script>
+  window.onload = function() {
+    google.script.run
+      .withSuccessHandler(function(clientes) {
+        var select = document.getElementById('select-cliente');
+        select.innerHTML = '<option value="">-- Elegir cliente --</option>';
+        clientes.forEach(c => select.innerHTML += '<option value="'+c+'">'+c+'</option>');
+      })
+      .obtenerClientes();
+  };
+
+  function consultarCuenta() {
+    var cliente = document.getElementById('select-cliente').value;
+    if (!cliente) {
+      alert("Por favor elegí un cliente de la lista.");
+      return;
+    }
+
+    // Resetear y mostrar cargando
+    document.getElementById('btn-consultar').disabled = true;
+    document.getElementById('loader').style.display = 'block';
+    document.getElementById('tabla-container').style.display = 'none';
+    document.getElementById('saldo-card').style.display = 'none';
+    document.getElementById('tabla-body').innerHTML = '';
+
+    google.script.run
+      .withSuccessHandler(mostrarEstadoCuenta)
+      .withFailureHandler(function(err) {
+        alert("Error leyendo el Excel: " + err.message);
+        document.getElementById('btn-consultar').disabled = false;
+        document.getElementById('loader').style.display = 'none';
+      })
+      .obtenerEstadoCuenta(cliente);
+  }
+
+  function mostrarEstadoCuenta(datos) {
+    document.getElementById('btn-consultar').disabled = false;
+    document.getElementById('loader').style.display = 'none';
+    
+    // 1. Mostrar la tarjeta de saldo total
+    var saldoCard = document.getElementById('saldo-card');
+    var saldoTotalEl = document.getElementById('saldo-total');
+    
+    saldoCard.style.display = 'block';
+    
+    var saldoNum = parseFloat(datos.saldoTotal);
+    saldoTotalEl.innerText = "$" + formatMoney(Math.abs(saldoNum)); // Muestra el valor absoluto
+    
+    // Aplicar color según si debe plata o tiene a favor
+    if (saldoNum > 0.01) {
+      saldoTotalEl.className = 'saldo-monto deuda';
+      saldoTotalEl.innerText += " (En contra)";
+    } else if (saldoNum < -0.01) {
+      saldoTotalEl.className = 'saldo-monto a-favor';
+      saldoTotalEl.innerText += " (A favor)";
+    } else {
+      saldoTotalEl.className = 'saldo-monto';
+      saldoTotalEl.innerText = "$0.00 (Al día)";
+    }
+
+    // 2. Llenar la tabla renglón por renglón
+    var tbody = document.getElementById('tabla-body');
+    if (datos.movimientos.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px;">No hay movimientos registrados para este cliente.</td></tr>';
+    } else {
+      var filasHtml = '';
+      datos.movimientos.forEach(function(mov) {
+        var cargoStr = mov.cargo > 0 ? '<span class="cargo">$' + formatMoney(mov.cargo) + '</span>' : '-';
+        var abonoStr = mov.abono > 0 ? '<span class="abono">$' + formatMoney(mov.abono) + '</span>' : '-';
+        
+        filasHtml += `
+          <tr>
+            <td>${mov.fecha}</td>
+            <td>${mov.detalle}</td>
+            <td>${cargoStr}</td>
+            <td>${abonoStr}</td>
+            <td style="font-weight:bold;">$${formatMoney(mov.saldo)}</td>
+          </tr>
+        `;
+      });
+      tbody.innerHTML = filasHtml;
+    }
+    
+    document.getElementById('tabla-container').style.display = 'block';
+  }
+
+  // Función para que los números se vean lindos (ej. 1.500,50)
+  function formatMoney(amount) {
+    return Number(amount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+</script>
+
+</body>
+</html>

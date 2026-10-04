@@ -1,0 +1,46 @@
+# Tema claro tipo shadcn / ERP: lienzo gris, tarjetas blancas, Inter.
+[theme]
+base = "light"
+primaryColor = "#18181B"
+backgroundColor = "#F4F4F5"
+secondaryBackgroundColor = "#FFFFFF"
+codeBackgroundColor = "#F4F4F5"
+textColor = "#09090B"
+linkColor = "#18181B"
+borderColor = "#E4E4E7"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "12px"
+buttonRadius = "8px"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+headingFont = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+codeFontSize = "0.875rem"
+codeTextColor = "#18181B"
+baseFontSize = 14
+baseFontWeight = 400
+headingFontSizes = ["28px", "22px", "18px", "16px", "14px", "13px"]
+headingFontWeights = [600, 600, 600, 600, 500, 500]
+linkUnderline = false
+chartCategoricalColors = ["#18181B", "#71717A", "#A1A1AA", "#D4D4D8", "#3B82F6", "#EF4444", "#22C55E"]
+
+grayColor = "#71717A"
+blueColor = "#3B82F6"
+greenColor = "#16A34A"
+redColor = "#DC2626"
+yellowColor = "#CA8A04"
+orangeColor = "#EA580C"
+violetColor = "#7C3AED"
+
+dataframeBorderColor = "#E4E4E7"
+dataframeHeaderBackgroundColor = "#FAFAFA"
+
+[theme.sidebar]
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F4F5"
+codeBackgroundColor = "#F4F4F5"
+textColor = "#09090B"
+borderColor = "#E4E4E7"
+primaryColor = "#18181B"
+dataframeHeaderBackgroundColor = "#FAFAFA"
+dataframeBorderColor = "#E4E4E7"
