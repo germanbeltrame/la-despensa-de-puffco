@@ -113,9 +113,30 @@ COLUMNAS_CATALOGO_CLIENTE = (
 )
 
 
+def cargar_productos_activos(sb: Client, columnas: str) -> list[dict]:
+    """Productos activos. activo nulo cuenta como activo, igual que esta_activo."""
+    filas = []
+    inicio = 0
+    tamano = 1000
+    while True:
+        lote = (
+            sb.table("productos")
+            .select(columnas)
+            .or_("activo.eq.true,activo.is.null")
+            .range(inicio, inicio + tamano - 1)
+            .execute()
+            .data
+            or []
+        )
+        filas.extend(lote)
+        if len(lote) < tamano:
+            return filas
+        inicio += tamano
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def leer_catalogo_publico() -> list[dict]:
-    return cargar_todo(get_supabase(), "productos", COLUMNAS_CATALOGO_PUBLICO)
+    return cargar_productos_activos(get_supabase(), COLUMNAS_CATALOGO_PUBLICO)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
