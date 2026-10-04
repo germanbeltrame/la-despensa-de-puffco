@@ -473,6 +473,72 @@ def tabla_productos(
                     dialogo_borrar_producto(sb, producto)
 
 
+def gestion_fletes(sb: Client, fletes: list) -> None:
+    st.caption("Costo de envío en USD por kilo. Se usa al calcular el costo de cada producto.")
+    columna_tarifas, columna_alta = st.columns([1.7, 1], vertical_alignment="top")
+
+    with columna_tarifas:
+        if not fletes:
+            st.warning("No hay tipos de flete cargados.")
+        else:
+            editor = pd.DataFrame(fletes)[["id", "nombre", "costo_usd_kg"]]
+            version = st.session_state.get("flete_version", 0)
+            editado = st.data_editor(
+                editor,
+                hide_index=True,
+                num_rows="fixed",
+                width="stretch",
+                height=min(320, 56 + 36 * len(fletes)),
+                key=f"editor_fletes_{version}",
+                column_order=["nombre", "costo_usd_kg"],
+                column_config={
+                    "nombre": st.column_config.TextColumn("Tipo de flete", required=True),
+                    "costo_usd_kg": st.column_config.NumberColumn(
+                        "USD por kg",
+                        min_value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                    ),
+                },
+            )
+            if st.button("Guardar tarifas", type="primary"):
+                try:
+                    for indice, (_, fila) in enumerate(editado.iterrows()):
+                        nombre_flete = str(fila["nombre"]).strip()
+                        if not nombre_flete:
+                            st.warning("Cada tipo de flete necesita un nombre.")
+                            return
+                        flete_id = int(fila["id"]) if "id" in editado.columns else int(fletes[indice]["id"])
+                        actualizar_flete(sb, flete_id, nombre_flete, float(fila["costo_usd_kg"]))
+                except Exception as exc:
+                    st.error(f"No se pudieron guardar las tarifas. {texto_error(exc)}")
+                else:
+                    st.session_state["flete_version"] = version + 1
+                    avisar(
+                        "success",
+                        "Tarifas actualizadas. El costo total se recalcula con la tarifa nueva y el FOB no cambia.",
+                    )
+
+    with columna_alta:
+        with st.container(border=True):
+            with st.form("nuevo_flete", clear_on_submit=True):
+                st.markdown("**Nuevo tipo de flete**")
+                nombre_nuevo = st.text_input("Nombre del flete")
+                tarifa_nueva = st.number_input("Tarifa USD por kg", min_value=0.0, step=0.01)
+                crear_flete = st.form_submit_button("Agregar tipo de flete", width="stretch")
+        if crear_flete:
+            if not nombre_nuevo.strip():
+                st.warning("El nombre del flete es obligatorio.")
+            else:
+                try:
+                    insertar_flete(sb, nombre_nuevo.strip(), float(tarifa_nueva))
+                except Exception as exc:
+                    st.error(f"No se pudo agregar el flete. {texto_error(exc)}")
+                else:
+                    st.session_state["flete_version"] = st.session_state.get("flete_version", 0) + 1
+                    avisar("success", f"Tipo de flete {nombre_nuevo.strip()} agregado.")
+
+
 def pagina_inventario(sb: Client) -> None:
     fees = leer_configuracion(sb)
     fletes = leer_fletes(sb)
@@ -510,14 +576,6 @@ def pagina_inventario(sb: Client) -> None:
         2,
     )
     sin_stock = sum(1 for item in catalogo if int(item["producto"].get("stock_actual") or 0) <= 0)
-    mostrar_kpis(
-        [
-            ("Total de productos", str(len(catalogo)), "En el catálogo"),
-            ("Valor de inventario", dinero(valor_inventario), "Costo de las unidades en stock"),
-            ("Unidades", f"{unidades:,}", "Suma del stock actual"),
-            ("Sin stock", str(sin_stock), "Productos en cero"),
-        ]
-    )
 
     categorias = sorted({(item["producto"].get("categoria") or "").strip() for item in catalogo if (item["producto"].get("categoria") or "").strip()})
     marcas = sorted({(item["producto"].get("marca") or "").strip() for item in catalogo if (item["producto"].get("marca") or "").strip()})
@@ -528,106 +586,62 @@ def pagina_inventario(sb: Client) -> None:
     if st.session_state.get("inv_marca") not in opciones_marca:
         st.session_state["inv_marca"] = "Todas"
 
-    col_buscar, col_categoria, col_marca, col_estado, col_inactivos = st.columns(
-        [2.1, 1.3, 1.3, 1.4, 1.2],
-        vertical_alignment="bottom",
-    )
-    with col_buscar:
-        busqueda = st.text_input("Buscar", key="inv_buscar", placeholder="Nombre del producto")
-    with col_categoria:
-        categoria = st.selectbox("Categoría", opciones_categoria, key="inv_categoria")
-    with col_marca:
-        marca = st.selectbox("Marca", opciones_marca, key="inv_marca")
-    with col_estado:
-        completitud = st.selectbox("Productos", ["Todos", "Solo Incompletos"], key="inv_completitud")
-    with col_inactivos:
-        st.checkbox("Mostrar inactivos", key="inv_inactivos")
+    tab_productos, tab_fletes = st.tabs(["Lista de Productos", "Configuración de Fletes"])
 
-    col_alta, col_importar, _espacio = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
-    with col_alta:
-        if st.button("+ Nuevo producto", type="primary", width="stretch"):
-            dialogo_producto(sb, fletes, None, fee_recepcion, fee_giro)
-    with col_importar:
-        if st.button("Importar Productos", width="stretch"):
-            dialogo_importar(sb, fletes, productos, fee_recepcion, fee_giro)
+    with tab_productos:
+        mostrar_kpis(
+            [
+                ("Total de productos", str(len(catalogo)), "En el catálogo"),
+                ("Valor de inventario", dinero(valor_inventario), "Costo de las unidades en stock"),
+                ("Unidades", f"{unidades:,}", "Suma del stock actual"),
+                ("Sin stock", str(sin_stock), "Productos en cero"),
+            ]
+        )
+        col_buscar, col_categoria, col_marca, col_estado, col_inactivos = st.columns(
+            [2.1, 1.3, 1.3, 1.4, 1.2],
+            vertical_alignment="bottom",
+        )
+        with col_buscar:
+            busqueda = st.text_input("Buscar", key="inv_buscar", placeholder="Nombre del producto")
+        with col_categoria:
+            categoria = st.selectbox("Categoría", opciones_categoria, key="inv_categoria")
+        with col_marca:
+            marca = st.selectbox("Marca", opciones_marca, key="inv_marca")
+        with col_estado:
+            completitud = st.selectbox("Productos", ["Todos", "Solo Incompletos"], key="inv_completitud")
+        with col_inactivos:
+            st.checkbox("Mostrar inactivos", key="inv_inactivos")
 
-    texto = busqueda.strip().lower()
-    filtrados = []
-    for item in catalogo:
-        producto = item["producto"]
-        if texto and texto not in producto["nombre"].lower():
-            continue
-        if categoria != "Todas" and (producto.get("categoria") or "").strip() != categoria:
-            continue
-        if marca != "Todas" and (producto.get("marca") or "").strip() != marca:
-            continue
-        if completitud == "Solo Incompletos" and not producto_incompleto(producto):
-            continue
-        filtrados.append(item)
+        col_alta, col_importar, _espacio = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
+        with col_alta:
+            if st.button("+ Nuevo producto", type="primary", width="stretch"):
+                dialogo_producto(sb, fletes, None, fee_recepcion, fee_giro)
+        with col_importar:
+            if st.button("Importar Productos", width="stretch"):
+                dialogo_importar(sb, fletes, productos, fee_recepcion, fee_giro)
 
-    st.caption(f"{len(filtrados)} productos")
+        texto = busqueda.strip().lower()
+        filtrados = []
+        for item in catalogo:
+            producto = item["producto"]
+            if texto and texto not in producto["nombre"].lower():
+                continue
+            if categoria != "Todas" and (producto.get("categoria") or "").strip() != categoria:
+                continue
+            if marca != "Todas" and (producto.get("marca") or "").strip() != marca:
+                continue
+            if completitud == "Solo Incompletos" and not producto_incompleto(producto):
+                continue
+            filtrados.append(item)
 
-    if not catalogo:
-        st.warning("Todavía no hay productos cargados.")
-    elif not filtrados:
-        st.warning("Ningún producto coincide con los filtros.")
-    else:
-        tabla_productos(sb, fletes, filtrados, fee_recepcion, fee_giro)
+        st.caption(f"{len(filtrados)} productos")
 
-    with st.container(border=True):
-        st.subheader("Gestión de fletes", icon=":material/local_shipping:")
-        if not fletes:
-            st.warning("No hay tipos de flete cargados.")
+        if not catalogo:
+            st.warning("Todavía no hay productos cargados.")
+        elif not filtrados:
+            st.warning("Ningún producto coincide con los filtros.")
         else:
-            editor = pd.DataFrame(fletes)[["id", "nombre", "costo_usd_kg"]]
-            version = st.session_state.get("flete_version", 0)
-            editado = st.data_editor(
-                editor,
-                hide_index=True,
-                num_rows="fixed",
-                key=f"editor_fletes_{version}",
-                column_order=["nombre", "costo_usd_kg"],
-                column_config={
-                    "nombre": st.column_config.TextColumn("Tipo de flete", required=True),
-                    "costo_usd_kg": st.column_config.NumberColumn(
-                        "USD por kg",
-                        min_value=0.0,
-                        step=0.01,
-                        format="%.2f",
-                    ),
-                },
-            )
-            if st.button("Guardar tarifas", type="primary"):
-                try:
-                    for indice, (_, fila) in enumerate(editado.iterrows()):
-                        nombre_flete = str(fila["nombre"]).strip()
-                        if not nombre_flete:
-                            st.warning("Cada tipo de flete necesita un nombre.")
-                            return
-                        flete_id = int(fila["id"]) if "id" in editado.columns else int(fletes[indice]["id"])
-                        actualizar_flete(sb, flete_id, nombre_flete, float(fila["costo_usd_kg"]))
-                except Exception as exc:
-                    st.error(f"No se pudieron guardar las tarifas. {texto_error(exc)}")
-                else:
-                    st.session_state["flete_version"] = version + 1
-                    avisar(
-                        "success",
-                        "Tarifas actualizadas. El costo total se recalcula con la tarifa nueva y el FOB no cambia.",
-                    )
+            tabla_productos(sb, fletes, filtrados, fee_recepcion, fee_giro)
 
-        with st.form("nuevo_flete", clear_on_submit=True):
-            st.markdown("**Nuevo tipo de flete**")
-            nombre_nuevo = st.text_input("Nombre del flete")
-            tarifa_nueva = st.number_input("Tarifa USD por kg", min_value=0.0, step=0.01)
-            crear_flete = st.form_submit_button("Agregar tipo de flete")
-        if crear_flete:
-            if not nombre_nuevo.strip():
-                st.warning("El nombre del flete es obligatorio.")
-            else:
-                try:
-                    insertar_flete(sb, nombre_nuevo.strip(), float(tarifa_nueva))
-                except Exception as exc:
-                    st.error(f"No se pudo agregar el flete. {texto_error(exc)}")
-                else:
-                    st.session_state["flete_version"] = st.session_state.get("flete_version", 0) + 1
-                    avisar("success", f"Tipo de flete {nombre_nuevo.strip()} agregado.")
+    with tab_fletes:
+        gestion_fletes(sb, fletes)

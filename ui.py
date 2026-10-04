@@ -60,13 +60,51 @@ ESTILOS = """
 html, body, .stApp, [data-testid="stAppViewContainer"] {
   font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-#MainMenu, footer, header, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {
+#MainMenu, footer, [data-testid="stDecoration"],
+[data-testid="stStatusWidget"], [data-testid="stMainMenu"], .stAppDeployButton {
   display: none !important;
+}
+/* En Streamlit 1.64 el botón >> vive dentro del encabezado. Si se oculta
+   el header o el toolbar, en el celular no queda forma de reabrir el menú. */
+header[data-testid="stHeader"],
+[data-testid="stToolbar"] {
+  background: transparent !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  border: 0 !important;
+}
+[data-testid="stExpandSidebarButton"],
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  top: 0.6rem !important;
+  left: 0.6rem !important;
+  z-index: 1000002 !important;
+  background: #FFFFFF !important;
+  color: #18181B !important;
+  border: 1px solid #E4E4E7 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+  width: 2.4rem !important;
+  height: 2.4rem !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 .block-container {
   padding-top: 1.5rem;
   padding-bottom: 2.5rem;
   max-width: 1280px;
+}
+@media (max-width: 768px) {
+  [data-testid="stMain"] .block-container {
+    padding-top: 3.25rem;
+  }
 }
 section[data-testid="stSidebar"] {
   border-right: 1px solid #E4E4E7;

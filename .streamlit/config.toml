@@ -1,4 +1,7 @@
 # Tema claro tipo shadcn / ERP: lienzo gris, tarjetas blancas, Inter.
+[client]
+toolbarMode = "minimal"
+
 [theme]
 base = "light"
 primaryColor = "#18181B"
