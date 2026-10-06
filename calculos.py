@@ -1,6 +1,14 @@
 from datetime import datetime
 
 
+def margen_porcentaje(precio, costo) -> float | None:
+    """((precio de venta - costo total) / costo total) × 100. Sin costo no hay margen."""
+    base = float(costo or 0)
+    if base <= 0:
+        return None
+    return round((float(precio or 0) - base) / base * 100, 1)
+
+
 def costo_unitario(fob, peso_kg, tarifa_kg, fee_recepcion_pct, fee_giro_pct) -> float:
     """(FOB + peso × precio por kg) × (1 + fees). Los fees entran como porcentaje."""
     flete = float(peso_kg) * float(tarifa_kg)

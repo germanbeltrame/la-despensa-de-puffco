@@ -1,7 +1,7 @@
 import streamlit as st
 
-from auth import cambiar_clave_cliente, cerrar_sesion, iniciar_sesion, usuario_actual
-from database import conectar, leer_cliente_por_id, texto_error
+from auth import CLAVE_SESION, cambiar_clave_cliente, cerrar_sesion, iniciar_sesion, usuario_actual
+from database import cliente_nuevo, conectar, leer_cliente_por_id, texto_error
 from ui import (
     aplicar_estilos,
     banner_simulacion,
@@ -19,6 +19,16 @@ from views.pagos import pagina_pagos
 from views.portal import pagina_portal
 from views.reportes import pagina_reportes
 from views.ventas import pagina_ventas
+
+def _cliente_con_sesion():
+    """Cliente de datos con el JWT del login, para que RLS lo vea como authenticated."""
+    sesion = st.session_state.get(CLAVE_SESION) or {}
+    token = sesion.get("access_token")
+    sb = cliente_nuevo()
+    if token:
+        sb.postgrest.auth(token)
+    return sb
+
 
 VISTAS = {
     "Inventario y Costos": pagina_inventario,
@@ -48,6 +58,8 @@ def main() -> None:
         st.stop()
 
     usuario = usuario_actual(sb)
+    if usuario is not None:
+        sb = _cliente_con_sesion()
     if usuario is None:
         credenciales = barra_invitado()
         if credenciales:

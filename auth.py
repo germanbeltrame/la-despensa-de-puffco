@@ -38,11 +38,13 @@ def es_admin_principal(email: str) -> bool:
 
 
 def decidir_rol(email: str, app_metadata: dict | None, correos: set[str]) -> tuple[str, int | None] | None:
-    """Admin por correo o metadata. Cliente si app_metadata trae cliente_id. Si no, hay que buscar el email."""
+    """Admin por correo maestro, aunque la metadata lo haya dejado como cliente."""
     meta = app_metadata or {}
-    rol = str(meta.get("role") or meta.get("rol") or "").strip().lower()
     correo = email.strip().lower()
-    if correo == ADMIN_PRINCIPAL or correo in correos or rol in ROLES_ADMIN:
+    if correo and (correo == ADMIN_PRINCIPAL or correo in correos):
+        return "admin", None
+    rol = str(meta.get("role") or meta.get("rol") or "").strip().lower()
+    if rol in ROLES_ADMIN:
         return "admin", None
     cliente_id = meta.get("cliente_id")
     if cliente_id in (None, ""):
@@ -230,15 +232,23 @@ def _sincronizar_tabla_admin(sb, email: str, user_id: str) -> None:
     sb.table(tabla).insert(datos).execute()
 
 
-def asegurar_admin(sb, user) -> None:
-    """Deja a los administradores maestros como admin en Auth y, si existe, en la tabla de roles."""
-    email = (user.email or "").strip().lower()
-    if not es_admin_principal(email):
+def asegurar_admin(sb, user, email: str | None = None) -> None:
+    """Deja a los administradores maestros como admin en Auth y, si existe, en la tabla de roles.
+
+    Si la cuenta quedó como cliente, se borra cliente_id para que el JWT no la rebote al portal.
+    """
+    email = (email or getattr(user, "email", None) or "").strip().lower()
+    if email not in correos_admin():
         return
     try:
         meta = dict(user.app_metadata or {})
-        if str(meta.get("role") or meta.get("rol") or "").strip().lower() not in ROLES_ADMIN:
+        rol = str(meta.get("role") or meta.get("rol") or "").strip().lower()
+        atada_a_cliente = meta.get("cliente_id") not in (None, "")
+        if rol not in ROLES_ADMIN or atada_a_cliente or meta.get("rol"):
             meta["role"] = "admin"
+            meta.pop("cliente_id", None)
+            meta.pop("rol", None)
+            meta["debe_cambiar_clave"] = False
             cliente_nuevo().auth.admin.update_user_by_id(str(user.id), {"app_metadata": meta})
     except Exception:
         pass
@@ -248,8 +258,11 @@ def asegurar_admin(sb, user) -> None:
         pass
 
 
-def _resolver(sb, user) -> tuple[str, int | None]:
-    email = (user.email or "").strip().lower()
+def _resolver(sb, user, email_ingresado: str | None = None) -> tuple[str, int | None]:
+    email = (getattr(user, "email", None) or email_ingresado or "").strip().lower()
+    if email in correos_admin():
+        asegurar_admin(sb, user, email)
+        return "admin", None
     decision = decidir_rol(email, user.app_metadata, correos_admin())
     if decision and decision[0] == "admin":
         asegurar_admin(sb, user)
@@ -290,7 +303,7 @@ def iniciar_sesion(sb, email: str, clave: str) -> None:
     if respuesta.user is None or respuesta.session is None:
         raise ValueError("No se pudo iniciar sesión.")
     try:
-        rol, cliente_id = _resolver(sb, respuesta.user)
+        rol, cliente_id = _resolver(sb, respuesta.user, email)
     except Exception:
         try:
             auth.auth.sign_out({"scope": "global"})
@@ -337,6 +350,20 @@ def usuario_actual(sb) -> dict | None:
             st.session_state["aviso_auth"] = "La sesión venció. Volvé a ingresar."
             return None
         st.session_state[CLAVE_SESION] = sesion
+    email_sesion = (sesion.get("email") or "").strip().lower()
+    if email_sesion in correos_admin():
+        sesion["rol"] = "admin"
+        sesion["cliente_id"] = None
+        if not sesion.get("metadata_admin_ok") and sesion.get("user_id"):
+            try:
+                respuesta = cliente_nuevo().auth.admin.get_user_by_id(sesion["user_id"])
+                if respuesta.user is not None:
+                    asegurar_admin(sb, respuesta.user, email_sesion)
+                    sesion["metadata_admin_ok"] = True
+            except Exception:
+                pass
+        st.session_state[CLAVE_SESION] = sesion
+        return {"rol": "admin", "email": email_sesion, "cliente": None, "user_id": sesion.get("user_id")}
     if sesion.get("rol") == "admin":
         return {"rol": "admin", "email": sesion["email"], "cliente": None, "user_id": sesion.get("user_id")}
     cliente_id = sesion.get("cliente_id")

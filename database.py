@@ -498,11 +498,16 @@ def guardar_producto(sb: Client, datos: dict, producto_id: int | None) -> str | 
 def _escribir_producto(sb: Client, datos: dict, producto_id: int | None) -> str | None:
     try:
         if producto_id is None:
-            sb.table("productos").insert(datos).execute()
+            respuesta = sb.table("productos").insert(datos).execute()
         else:
-            sb.table("productos").update(datos).eq("id", int(producto_id)).execute()
+            respuesta = sb.table("productos").update(datos).eq("id", int(producto_id)).execute()
     except Exception as exc:
         return f"No se pudo guardar el producto. {texto_error(exc)}"
+    if not respuesta.data:
+        return (
+            "No se pudo guardar el producto. Supabase no devolvió la fila. "
+            "Faltan permisos de escritura: ejecutá 02_fix_seguridad.sql."
+        )
     return None
 
 

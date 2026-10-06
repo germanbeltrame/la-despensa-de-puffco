@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from supabase import Client
 
-from calculos import costo_unitario
+from calculos import costo_unitario, margen_porcentaje
 from database import (
     actualizar_flete,
     eliminar_producto,
@@ -105,27 +105,35 @@ def producto_incompleto(producto: dict) -> bool:
     return sin_peso or not fob_verificado
 
 
-def plantilla_excel() -> bytes:
-    ejemplo = pd.DataFrame(
-        [
+def excel_productos(productos: list, fletes: list) -> bytes:
+    filas = []
+    for producto in sorted(productos, key=lambda item: str(item.get("nombre") or "").lower()):
+        filas.append(
             {
-                "Nombre": "Ejemplo Peak",
-                "Marca": "PUFFCO",
-                "Categoría": "VAPORIZADOR",
-                "Costo_FOB": 100,
-                "Peso_KG": 0.5,
-                "Precio_KG": 30,
-                "Precio_Puntero": 250,
-                "Precio_Distro": 200,
-                "Stock_Ingreso": 2,
-                "URL_Imagen": "",
+                "Nombre": producto.get("nombre") or "",
+                "Marca": producto.get("marca") or "",
+                "Categoría": producto.get("categoria") or "",
+                "Costo_FOB": float(producto.get("costo_fob") or 0),
+                "Peso_KG": float(producto.get("peso_kg") or 0),
+                "Precio_KG": tarifa_guardada(producto, fletes),
+                "Precio_Puntero": float(producto.get("precio_puntero_usd") or 0),
+                "Precio_Distro": float(producto.get("precio_distro_usd") or 0),
+                "Stock_Ingreso": 0,
+                "Stock_Actual": int(producto.get("stock_actual") or 0),
+                "URL_Imagen": producto.get("imagen_url") or "",
             }
-        ],
-        columns=COLUMNAS_PLANTILLA,
-    )
+        )
+    tabla = pd.DataFrame(filas, columns=[*COLUMNAS_PLANTILLA, "Stock_Actual"])
     archivo = io.BytesIO()
-    ejemplo.to_excel(archivo, index=False, sheet_name="Productos")
+    tabla.to_excel(archivo, index=False, sheet_name="Productos")
     return archivo.getvalue()
+
+
+def texto_margen(precio, costo) -> str:
+    margen = margen_porcentaje(precio, costo)
+    if margen is None:
+        return "—"
+    return f"{margen:.1f} %"
 
 
 @st.dialog("Producto", width="large")
@@ -203,6 +211,10 @@ def dialogo_producto(
         disabled=calcular,
     )
     st.caption("(FOB + peso × precio por kg) × (1 + fees de recepción y giro).")
+    st.metric(
+        "Margen de ganancia",
+        texto_margen(st.session_state[claves["puntero"]], st.session_state[claves["costo"]]),
+    )
 
     if not st.button("Guardar", type="primary", key=f"guardar_producto_{sufijo}"):
         return
@@ -364,13 +376,15 @@ def dialogo_importar(
     fee_giro: float,
 ) -> None:
     st.caption(
-        "Si el nombre ya existe, se suma el stock y se actualizan costos y precios. "
+        "La descarga trae todos los productos actuales para corregir costos y precios. "
+        "Stock_Ingreso viene en 0: al subir el archivo ese número se suma al stock, así que 0 no lo cambia. "
+        "Stock_Actual es solo de referencia. Si el nombre ya existe, se actualizan costos y precios. "
         "Si no existe, se crea el producto."
     )
     st.download_button(
-        "Descargar plantilla Excel de ejemplo",
-        data=plantilla_excel(),
-        file_name="plantilla_productos.xlsx",
+        "Descargar Excel de productos",
+        data=excel_productos(productos, fletes),
+        file_name="productos.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="descargar_plantilla_productos",
     )
@@ -426,10 +440,10 @@ def tabla_productos(
     fee_recepcion: float,
     fee_giro: float,
 ) -> None:
-    proporciones = [0.5, 1.9, 1.05, 1.1, 0.5, 1.25, 0.85, 0.95, 0.95]
+    proporciones = [0.42, 1.55, 0.85, 0.9, 0.42, 1.05, 0.72, 0.62, 0.7, 0.7]
     cabecera = st.columns(proporciones, vertical_alignment="center")
     for titulo, columna in zip(
-        ["Foto", "Nombre", "Marca", "Categoría", "Stock", "Precio de venta", "Costo", "", ""],
+        ["Foto", "Nombre", "Marca", "Categoría", "Stock", "Precio de venta", "Costo", "Margen %", "", ""],
         cabecera,
     ):
         if titulo:
@@ -453,7 +467,8 @@ def tabla_productos(
             columnas[4].write(str(stock))
             columnas[5].write(dinero(producto.get("precio_puntero_usd") or 0))
             columnas[6].write(dinero(item["costo"]))
-            with columnas[7]:
+            columnas[7].write(texto_margen(producto.get("precio_puntero_usd") or 0, item["costo"]))
+            with columnas[8]:
                 if st.button(
                     "Editar",
                     key=f"inv_editar_{pid}",
@@ -462,7 +477,7 @@ def tabla_productos(
                     width="stretch",
                 ):
                     dialogo_producto(sb, fletes, producto, fee_recepcion, fee_giro)
-            with columnas[8]:
+            with columnas[9]:
                 if st.button(
                     "Borrar",
                     key=f"inv_eliminar_{pid}",
