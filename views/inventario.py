@@ -29,6 +29,12 @@ from database import (
 )
 from ui import avisar, dinero, miniatura, mostrar_kpis, sembrar
 
+ORDENES_INVENTARIO = (
+    "Nombre (A-Z)",
+    "Menor margen de ganancia",
+    "Mayor margen de ganancia",
+)
+
 COLUMNAS_PLANTILLA = [
     "Nombre",
     "Marca",
@@ -561,6 +567,24 @@ def celda_foto(url) -> None:
     )
 
 
+def ordenar_productos(items: list, orden: str) -> list:
+    def nombre(item) -> str:
+        return str(item["producto"].get("nombre") or "").lower()
+
+    if orden == "Nombre (A-Z)":
+        return sorted(items, key=nombre)
+
+    descendente = orden == "Mayor margen de ganancia"
+
+    def clave(item):
+        margen = margen_porcentaje(item["producto"].get("precio_puntero_usd") or 0, item["costo"])
+        if margen is None:
+            return (1, 0.0, nombre(item))
+        return (0, -margen if descendente else margen, nombre(item))
+
+    return sorted(items, key=clave)
+
+
 def tabla_productos(
     sb: Client,
     fletes: list,
@@ -790,7 +814,6 @@ def pagina_inventario(sb: Client) -> None:
                 ),
             }
         )
-    catalogo.sort(key=lambda item: item["producto"]["nombre"].lower())
     if not st.session_state.get("inv_inactivos", False):
         catalogo = [item for item in catalogo if esta_activo(item["producto"])]
 
@@ -809,6 +832,8 @@ def pagina_inventario(sb: Client) -> None:
         st.session_state["inv_categoria"] = "Todas"
     if st.session_state.get("inv_marca") not in opciones_marca:
         st.session_state["inv_marca"] = "Todas"
+    if st.session_state.get("inv_orden") not in ORDENES_INVENTARIO:
+        st.session_state["inv_orden"] = ORDENES_INVENTARIO[0]
 
     marcas_catalogo = leer_marcas(sb)
     categorias_catalogo = leer_categorias(sb)
@@ -839,7 +864,7 @@ def pagina_inventario(sb: Client) -> None:
         with col_inactivos:
             st.checkbox("Mostrar inactivos", key="inv_inactivos")
 
-        col_alta, col_importar, _espacio = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
+        col_alta, col_importar, col_orden = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
         with col_alta:
             if st.button("+ Nuevo producto", type="primary", width="stretch"):
                 dialogo_producto(
@@ -848,6 +873,8 @@ def pagina_inventario(sb: Client) -> None:
         with col_importar:
             if st.button("Importar Productos", width="stretch"):
                 dialogo_importar(sb, fletes, productos, fee_recepcion, fee_giro)
+        with col_orden:
+            orden = st.selectbox("Ordenar por", ORDENES_INVENTARIO, key="inv_orden")
 
         texto = busqueda.strip().lower()
         filtrados = []
@@ -862,6 +889,7 @@ def pagina_inventario(sb: Client) -> None:
             if completitud == "Solo Incompletos" and not producto_incompleto(producto):
                 continue
             filtrados.append(item)
+        filtrados = ordenar_productos(filtrados, orden)
 
         st.caption(f"{len(filtrados)} productos")
 
