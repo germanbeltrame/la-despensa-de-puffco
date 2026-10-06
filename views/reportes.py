@@ -9,7 +9,7 @@ import streamlit as st
 from supabase import Client
 
 from calculos import parse_fecha, tiene_ficha
-from database import cargar_todo, consultar, deuda_de_fichas, leer_clientes, leer_productos
+from database import cargar_todo, consultar, deuda_de_fichas, leer_clientes, leer_gastos, leer_productos
 from ui import columna_usd, dinero, mostrar_kpis
 
 ART = timezone(timedelta(hours=-3))
@@ -125,14 +125,24 @@ def pagina_reportes(sb: Client) -> None:
         and (cliente_id == 0 or cliente_id_ficha == cliente_id)
     }
     deuda = deuda_de_fichas(pedidos, pagos, por_deuda)
+    gastos = leer_gastos(sb, inicio, fin) or []
+    total_gastos = round(sum(float(gasto.get("monto_usd") or 0) for gasto in gastos), 2)
+    ganancia_neta = round(ganancia - total_gastos, 2)
 
     mostrar_kpis(
         [
             ("Facturación neta", dinero(facturacion), "A rendir en el período"),
             ("Ganancia limpia real", dinero(ganancia), "USD de la casa en el período"),
+            ("Gastos Operativos", dinero(total_gastos), "Salidas del período, en USD"),
+            ("Ganancia Neta Final", dinero(ganancia_neta), "Ganancia limpia menos gastos"),
             ("Deuda pendiente actual", dinero(deuda), "Cuentas con ficha propia"),
         ]
     )
+    if cliente_id != 0 or marca != TODAS_LAS_MARCAS:
+        st.caption(
+            "Los gastos operativos son de toda la empresa en el período. "
+            "La ganancia neta los resta de la ganancia filtrada."
+        )
 
     meses = max(meses_del_rango(inicio, fin), 1)
     evolucion = evolucion_mensual(

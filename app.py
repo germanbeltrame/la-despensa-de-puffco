@@ -14,6 +14,7 @@ from ui import (
 from views.catalogo import pagina_catalogo
 from views.clientes import pagina_clientes
 from views.cuentas_corrientes import pagina_cuentas
+from views.gastos import pagina_gastos
 from views.inventario import pagina_inventario
 from views.pagos import pagina_pagos
 from views.portal import pagina_portal
@@ -36,6 +37,7 @@ VISTAS = {
     "Nuevas Ventas": pagina_ventas,
     "Registrar Pago": pagina_pagos,
     "Cuentas Corrientes": pagina_cuentas,
+    "Gastos Operativos": pagina_gastos,
     "Reportes": pagina_reportes,
 }
 

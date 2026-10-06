@@ -29,6 +29,11 @@ SECCIONES = [
         "material": ":material/receipt_long:",
     },
     {
+        "menu": "Gastos Operativos",
+        "icono": "wallet2",
+        "material": ":material/account_balance_wallet:",
+    },
+    {
         "menu": "Reportes",
         "icono": "bar-chart",
         "material": ":material/bar_chart:",

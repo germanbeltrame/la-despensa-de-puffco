@@ -1,11 +1,12 @@
 import os
+from datetime import date, timedelta, timezone
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-from calculos import cargo_cuenta, tiene_ficha
+from calculos import cargo_cuenta, parse_fecha, tiene_ficha
 
 
 def texto_error(exc: Exception) -> str:
@@ -729,6 +730,59 @@ def asegurar_en_catalogo(sb: Client, tabla: str, nombre: str) -> None:
         if es_duplicado(exc) or _tabla_catalogo_ausente(exc):
             return
         return
+
+
+ART = timezone(timedelta(hours=-3))
+
+
+def _dia_gasto(valor) -> date | None:
+    momento = parse_fecha(valor)
+    if momento.year <= 1:
+        return None
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=ART)
+    return momento.astimezone(ART).date()
+
+
+def leer_gastos(sb: Client, fecha_desde: date | None = None, fecha_hasta: date | None = None):
+    filas = consultar(
+        sb,
+        lambda cliente: cargar_todo(cliente, "gastos_operativos"),
+        "No se pudieron leer los gastos operativos.",
+    )
+    if filas is None or fecha_desde is None or fecha_hasta is None:
+        return filas
+    return [
+        fila
+        for fila in filas
+        if (dia := _dia_gasto(fila.get("fecha"))) is not None and fecha_desde <= dia <= fecha_hasta
+    ]
+
+
+def registrar_gasto(sb: Client, payload: dict) -> str | None:
+    datos = dict(payload)
+    datos["concepto"] = " ".join(str(datos.get("concepto") or "").split())
+    if not datos["concepto"]:
+        return "El concepto es obligatorio."
+    if float(datos.get("monto_usd") or 0) <= 0:
+        return "El monto en dólares tiene que ser mayor a cero."
+    try:
+        respuesta = sb.table("gastos_operativos").insert(datos).execute()
+    except Exception as exc:
+        return f"No se pudo registrar el gasto. {texto_error(exc)}"
+    if not respuesta.data:
+        return "No se pudo registrar el gasto. Revisá los permisos en Supabase."
+    return None
+
+
+def eliminar_gasto(sb: Client, gasto_id: int) -> str | None:
+    try:
+        respuesta = sb.table("gastos_operativos").delete().eq("id", int(gasto_id)).execute()
+    except Exception as exc:
+        return f"No se pudo eliminar el gasto. {texto_error(exc)}"
+    if not respuesta.data:
+        return "No se pudo eliminar el gasto. Revisá los permisos en Supabase."
+    return None
 
 
 def registrar_pago(sb: Client, payload: dict) -> str | None:
