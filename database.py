@@ -96,7 +96,14 @@ def leer_configuracion(sb: Client):
 
 
 def leer_clientes(sb: Client):
-    return consultar(sb, lambda cliente: cargar_todo(cliente, "clientes"), "No se pudieron leer los clientes.")
+    return consultar(
+        sb,
+        lambda cliente: _con_columnas_cliente(
+            COLUMNAS_CLIENTES,
+            lambda columnas: cargar_todo(cliente, "clientes", columnas),
+        ),
+        "No se pudieron leer los clientes.",
+    )
 
 
 def leer_productos(sb: Client, columnas: str = "*"):
@@ -149,15 +156,75 @@ def _columna_ausente(exc: Exception, columna: str) -> bool:
     return columna in texto and ("42703" in texto or "column" in texto or "schema cache" in texto)
 
 
+COLUMNAS_CLIENTES = "id,nombre,email,es_distribuidor,porcentaje_ganancia,activo,tiene_ficha,created_at"
+
+
+def _columnas_sin(columnas: str, ausente: str) -> str:
+    return ",".join(parte.strip() for parte in columnas.split(",") if parte.strip() and parte.strip() != ausente)
+
+
+def _con_columnas_cliente(columnas: str, accion):
+    """Ejecuta la lectura. Si tiene_ficha o email todavía no existen, reintenta sin esa columna."""
+    actual = columnas
+    while True:
+        try:
+            return accion(actual)
+        except Exception as exc:
+            presentes = {parte.strip() for parte in actual.split(",")}
+            faltante = next(
+                (
+                    columna
+                    for columna in ("tiene_ficha", "email")
+                    if columna in presentes and _columna_ausente(exc, columna)
+                ),
+                None,
+            )
+            if faltante is None:
+                raise
+            actual = _columnas_sin(actual, faltante)
+
+
+def _aviso_columna_cliente(columna: str) -> str:
+    if columna == "email":
+        return (
+            "Se guardó el cliente, pero el email no quedó en la base. "
+            "Falta la columna email en Supabase."
+        )
+    return (
+        "Se guardó el cliente, pero la ficha no quedó en la base. "
+        "Falta la columna tiene_ficha en Supabase."
+    )
+
+
+def _escribir_cliente(sb: Client, datos: dict, cliente_id: int | None):
+    payload = dict(datos)
+    avisos: list[str] = []
+    while True:
+        try:
+            if cliente_id is None:
+                return sb.table("clientes").insert(payload).execute(), avisos
+            sb.table("clientes").update(payload).eq("id", int(cliente_id)).execute()
+            return None, avisos
+        except Exception as exc:
+            faltante = next(
+                (
+                    columna
+                    for columna in ("email", "tiene_ficha")
+                    if columna in payload and _columna_ausente(exc, columna)
+                ),
+                None,
+            )
+            if faltante is None:
+                raise
+            payload.pop(faltante, None)
+            avisos.append(_aviso_columna_cliente(faltante))
+
+
 def leer_cliente_por_id(sb: Client, cliente_id: int) -> dict | None:
-    filas = (
-        sb.table("clientes")
-        .select("id,nombre,es_distribuidor,porcentaje_ganancia,activo")
-        .eq("id", int(cliente_id))
-        .limit(1)
-        .execute()
-        .data
-        or []
+    filas = _con_columnas_cliente(
+        "id,nombre,es_distribuidor,porcentaje_ganancia,activo,tiene_ficha",
+        lambda columnas: sb.table("clientes").select(columnas).eq("id", int(cliente_id)).limit(1).execute().data
+        or [],
     )
     if not filas:
         return None
@@ -167,14 +234,10 @@ def leer_cliente_por_id(sb: Client, cliente_id: int) -> dict | None:
 def leer_cliente_por_email(sb: Client, email: str) -> dict | None:
     patron = email.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     try:
-        filas = (
-            sb.table("clientes")
-            .select("id,nombre,es_distribuidor,porcentaje_ganancia,activo,email")
-            .ilike("email", patron)
-            .limit(2)
-            .execute()
-            .data
-            or []
+        filas = _con_columnas_cliente(
+            "id,nombre,es_distribuidor,porcentaje_ganancia,activo,email,tiene_ficha",
+            lambda columnas: sb.table("clientes").select(columnas).ilike("email", patron).limit(2).execute().data
+            or [],
         )
     except Exception as exc:
         if _columna_ausente(exc, "email"):
@@ -232,7 +295,7 @@ def resumen_global(sb: Client) -> tuple[float, float, float] | None:
     """Vendido neto a rendir, cobrado y deuda de las fichas.
 
     Vendido y cobrado suman toda la base. La deuda global solo incluye
-    clientes con solapa propia: el saldo que está en la calle.
+    clientes con ficha: el saldo que está en la calle.
     """
     pedidos = consultar(
         sb,
@@ -250,7 +313,10 @@ def resumen_global(sb: Client) -> tuple[float, float, float] | None:
     )
     clientes = consultar(
         sb,
-        lambda cliente: cargar_todo(cliente, "clientes", "id,nombre,es_distribuidor,porcentaje_ganancia"),
+        lambda cliente: _con_columnas_cliente(
+            "id,nombre,es_distribuidor,porcentaje_ganancia,tiene_ficha",
+            lambda columnas: cargar_todo(cliente, "clientes", columnas),
+        ),
         "No se pudieron leer los clientes del resumen.",
     )
     if pedidos is None or pagos is None or clientes is None:
@@ -335,8 +401,10 @@ def insertar_cliente(
     nombre: str,
     es_distribuidor: bool,
     email: str | None = None,
+    tiene_ficha: bool = False,
 ) -> tuple[int | None, str | None]:
     datos = datos_cliente(nombre, es_distribuidor)
+    datos["tiene_ficha"] = bool(tiene_ficha)
     if not datos["nombre"]:
         return None, "El nombre del cliente es obligatorio."
     if email is not None:
@@ -345,24 +413,12 @@ def insertar_cliente(
             return None, error_email
         datos["email"] = limpio
     try:
-        respuesta = sb.table("clientes").insert(datos).execute()
+        respuesta, avisos = _escribir_cliente(sb, datos, None)
     except Exception as exc:
-        if "email" in datos and _columna_ausente(exc, "email"):
-            datos.pop("email", None)
-            try:
-                respuesta = sb.table("clientes").insert(datos).execute()
-            except Exception as segundo:
-                return None, _error_cliente(segundo, "guardar")
-            if not respuesta.data:
-                return None, "Supabase no devolvió el cliente creado."
-            return (
-                int(respuesta.data[0]["id"]),
-                "Se guardó el cliente, pero el email no quedó en la base. Falta la columna email en Supabase.",
-            )
         return None, _error_cliente(exc, "guardar")
     if not respuesta.data:
         return None, "Supabase no devolvió el cliente creado."
-    return int(respuesta.data[0]["id"]), None
+    return int(respuesta.data[0]["id"]), " ".join(avisos) or None
 
 
 def actualizar_cliente(
@@ -372,34 +428,25 @@ def actualizar_cliente(
     es_distribuidor: bool,
     activo: bool | None = None,
     email: str | None = None,
+    tiene_ficha: bool | None = None,
 ) -> str | None:
     datos = datos_cliente(nombre, es_distribuidor)
     if activo is not None:
         datos["activo"] = bool(activo)
+    if tiene_ficha is not None:
+        datos["tiene_ficha"] = bool(tiene_ficha)
     if not datos["nombre"]:
         return "El nombre del cliente es obligatorio."
-    aviso_email = None
     if email is not None:
         limpio, error_email = normalizar_email(email)
         if error_email:
             return error_email
         datos["email"] = limpio
     try:
-        sb.table("clientes").update(datos).eq("id", int(cliente_id)).execute()
+        _respuesta, avisos = _escribir_cliente(sb, datos, int(cliente_id))
     except Exception as exc:
-        if "email" in datos and _columna_ausente(exc, "email"):
-            datos.pop("email", None)
-            try:
-                sb.table("clientes").update(datos).eq("id", int(cliente_id)).execute()
-            except Exception as segundo:
-                return _error_cliente(segundo, "actualizar")
-            aviso_email = (
-                "Se guardó el cliente, pero el email no quedó en la base. "
-                "Falta la columna email en Supabase."
-            )
-        else:
-            return _error_cliente(exc, "actualizar")
-    return aviso_email
+        return _error_cliente(exc, "actualizar")
+    return " ".join(avisos) or None
 
 
 def eliminar_cliente(sb: Client, cliente_id: int) -> tuple[str, str] | None:

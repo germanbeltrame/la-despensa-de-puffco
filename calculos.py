@@ -15,40 +15,10 @@ def factor_ganancia(cliente: dict) -> float:
     return 1.0
 
 
-# Clientes con solapa propia en la planilla. La deuda global es solo la de estas fichas.
-CUENTAS_CON_FICHA = {
-    "agus honney",
-    "alan",
-    "ale ong cordoba",
-    "alfredo indajaus",
-    "alto vuelo",
-    "charly distri",
-    "coco salta",
-    "conex distribuidora",
-    "facu lp",
-    "facu pisando",
-    "guille naesa",
-    "high up omg",
-    "kanario",
-    "lean tegridad",
-    "leloir ong",
-    "lt grow",
-    "marshal lean",
-    "nahu la comarca",
-    "old farmers",
-    "pedro",
-    "the pot club",
-    "tin uy",
-    "tuki grow",
-    "vaporever",
-}
-
-
 def tiene_ficha(cliente: dict | None) -> bool:
     if not cliente:
         return False
-    nombre = " ".join(str(cliente.get("nombre") or "").casefold().split())
-    return nombre in CUENTAS_CON_FICHA
+    return bool(cliente.get("tiene_ficha"))
 
 
 def es_cuenta_distribuidor(cliente: dict | None) -> bool:

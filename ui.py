@@ -432,6 +432,14 @@ def miniatura(url, ancho: int = 64) -> None:
     )
 
 
+def checkbox_tiene_ficha(clave: str) -> None:
+    st.checkbox(
+        "Tiene ficha",
+        key=clave,
+        help="Si está marcado, el saldo de este cliente entra en la deuda global.",
+    )
+
+
 def sembrar(clave: str, valor) -> None:
     if clave not in st.session_state:
         st.session_state[clave] = valor

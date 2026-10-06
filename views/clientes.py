@@ -12,7 +12,7 @@ from database import (
     leer_clientes,
     normalizar_email,
 )
-from ui import avisar, estilo_tipo_cliente, fila_click, mostrar_kpis, sembrar
+from ui import avisar, checkbox_tiene_ficha, estilo_tipo_cliente, fila_click, mostrar_kpis, sembrar
 
 
 def _mostrar_acceso(sufijo: str) -> None:
@@ -36,15 +36,16 @@ def _preparar_cliente(
     email: str,
     es_distribuidor: bool,
     activo: bool,
+    tiene_ficha: bool,
 ) -> tuple[int | None, str | None]:
     existente = int(cliente["id"]) if cliente is not None else st.session_state.get(f"cli_id_{sufijo}")
     if existente is None:
-        nuevo_id, error = insertar_cliente(sb, nombre, es_distribuidor, email)
+        nuevo_id, error = insertar_cliente(sb, nombre, es_distribuidor, email, tiene_ficha)
         if nuevo_id is not None:
             st.session_state[f"cli_id_{sufijo}"] = nuevo_id
             st.session_state["cliente_venta_pendiente"] = nuevo_id
         return nuevo_id, error
-    error = actualizar_cliente(sb, int(existente), nombre, es_distribuidor, activo, email)
+    error = actualizar_cliente(sb, int(existente), nombre, es_distribuidor, activo, email, tiene_ficha)
     return int(existente), error
 
 
@@ -55,10 +56,12 @@ def dialogo_cliente(sb: Client, cliente: dict | None = None) -> None:
     clave_email = f"cli_email_{sufijo}"
     clave_tipo = f"cli_tipo_{sufijo}"
     clave_activo = f"cli_activo_{sufijo}"
+    clave_ficha = f"cli_ficha_{sufijo}"
     sembrar(clave_nombre, "" if cliente is None else cliente["nombre"])
     sembrar(clave_email, "" if cliente is None else (cliente.get("email") or ""))
     sembrar(clave_tipo, False if cliente is None else bool(cliente.get("es_distribuidor")))
     sembrar(clave_activo, True if cliente is None else esta_activo(cliente))
+    sembrar(clave_ficha, False if cliente is None else bool(cliente.get("tiene_ficha")))
     with st.form(f"form_cliente_{sufijo}", enter_to_submit=False):
         st.text_input("Nombre del cliente", key=clave_nombre)
         columna_email, columna_acceso = st.columns([1.5, 1.3], vertical_alignment="bottom")
@@ -80,6 +83,7 @@ def dialogo_cliente(sb: Client, cliente: dict | None = None) -> None:
             key=clave_tipo,
             help="Si está marcado, la ganancia real es el 50% del margen. Si no, es el 100%.",
         )
+        checkbox_tiene_ficha(clave_ficha)
         if cliente is not None:
             st.checkbox("Activo", key=clave_activo)
         guardar = st.form_submit_button("Guardar", type="primary")
@@ -87,13 +91,14 @@ def dialogo_cliente(sb: Client, cliente: dict | None = None) -> None:
     email = st.session_state[clave_email]
     es_distribuidor = bool(st.session_state[clave_tipo])
     activo = True if cliente is None else bool(st.session_state[clave_activo])
+    con_ficha = bool(st.session_state[clave_ficha])
     if generar:
         limpio, error_email = normalizar_email(email)
         if error_email or not limpio:
             st.warning(error_email or "Cargá el email de acceso antes de generar la clave.")
         else:
             cliente_id, error = _preparar_cliente(
-                sb, cliente, sufijo, nombre, email, es_distribuidor, activo
+                sb, cliente, sufijo, nombre, email, es_distribuidor, activo, con_ficha
             )
             if cliente_id is None:
                 st.warning(error or "No se pudo guardar el cliente.")
@@ -116,7 +121,7 @@ def dialogo_cliente(sb: Client, cliente: dict | None = None) -> None:
                     }
     elif guardar:
         cliente_id, error = _preparar_cliente(
-            sb, cliente, sufijo, nombre, email, es_distribuidor, activo
+            sb, cliente, sufijo, nombre, email, es_distribuidor, activo, con_ficha
         )
         if cliente_id is None:
             st.warning(error or "No se pudo guardar el cliente.")
@@ -189,6 +194,7 @@ def pagina_clientes(sb: Client) -> None:
             "Nombre": cliente["nombre"],
             "Email": cliente.get("email") or "",
             "Tipo": "Distribuidor" if cliente.get("es_distribuidor") else "Estándar",
+            "Ficha": "Sí" if cliente.get("tiene_ficha") else "No",
             "Ver como cliente": "Ver como cliente",
             "Editar": ":material/edit:",
             "Eliminar": ":material/delete:",
@@ -204,6 +210,7 @@ def pagina_clientes(sb: Client) -> None:
         "Nombre": st.column_config.TextColumn("Nombre", width="large"),
         "Email": st.column_config.TextColumn("Email", width="medium"),
         "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
+        "Ficha": st.column_config.TextColumn("Ficha", width="small"),
         "Ver como cliente": st.column_config.ButtonColumn(
             "Ver como cliente",
             type="secondary",
@@ -225,9 +232,9 @@ def pagina_clientes(sb: Client) -> None:
         row_height=44,
         column_config=columnas,
         column_order=(
-            ["Nombre", "Email", "Tipo", "Estado", "Ver como cliente", "Editar", "Eliminar"]
+            ["Nombre", "Email", "Tipo", "Ficha", "Estado", "Ver como cliente", "Editar", "Eliminar"]
             if mostrar_inactivos
-            else ["Nombre", "Email", "Tipo", "Ver como cliente", "Editar", "Eliminar"]
+            else ["Nombre", "Email", "Tipo", "Ficha", "Ver como cliente", "Editar", "Eliminar"]
         ),
     )
     ver = fila_click("cli_ver")

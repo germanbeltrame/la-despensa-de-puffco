@@ -11,7 +11,7 @@ from database import (
     leer_fletes,
     leer_productos,
 )
-from ui import avisar, dinero, etiqueta_busqueda, miniatura
+from ui import avisar, checkbox_tiene_ficha, dinero, etiqueta_busqueda, miniatura
 
 FACTOR_GASTOS = 1.065
 
@@ -21,10 +21,16 @@ def alta_rapida_cliente(sb: Client) -> None:
         with st.form("alta_rapida_cliente", clear_on_submit=True):
             nombre = st.text_input("Nombre del cliente")
             es_distribuidor = st.checkbox("Distribuidor")
+            checkbox_tiene_ficha("alta_rapida_ficha")
             guardar = st.form_submit_button("Guardar", type="primary")
         if not guardar:
             return
-        nuevo_id, error = insertar_cliente(sb, nombre, es_distribuidor)
+        nuevo_id, error = insertar_cliente(
+            sb,
+            nombre,
+            es_distribuidor,
+            tiene_ficha=bool(st.session_state.get("alta_rapida_ficha")),
+        )
         if error:
             st.warning(error)
             return

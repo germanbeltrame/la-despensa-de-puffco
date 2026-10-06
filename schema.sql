@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS clientes (
   porcentaje_ganancia NUMERIC(5, 2) DEFAULT 100.00,
   email TEXT UNIQUE,
   activo BOOLEAN NOT NULL DEFAULT TRUE,
+  tiene_ficha BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
