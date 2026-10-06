@@ -447,9 +447,6 @@ def importar_productos(
             continue
         calcular = True
         costo = costo_unitario(fob, peso, precio_kg, fee_recepcion, fee_giro)
-        if existente and existente.get("calcular_costo") is False and existente.get("costo_total_usd") not in (None, ""):
-            calcular = False
-            costo = round(float(existente["costo_total_usd"]), 2)
         stock_base = int(existente.get("stock_actual") or 0) if existente else 0
         imagen = url or (existente.get("imagen_url") if existente else None) or None
         datos = {
