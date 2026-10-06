@@ -814,7 +814,14 @@ def crear_pedido(
         producto = linea["producto"]
         nuevo_stock = int(producto.get("stock_actual") or 0) - int(linea["cantidad"])
         try:
-            sb.table("productos").update({"stock_actual": nuevo_stock}).eq("id", int(producto["id"])).execute()
+            respuesta = (
+                sb.table("productos")
+                .update({"stock_actual": nuevo_stock})
+                .eq("id", int(producto["id"]))
+                .execute()
+            )
+            if not respuesta.data:
+                errores_stock.append(producto["nombre"])
         except Exception:
             errores_stock.append(producto["nombre"])
     return None, errores_stock

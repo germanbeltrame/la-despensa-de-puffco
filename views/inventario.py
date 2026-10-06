@@ -323,12 +323,14 @@ def dialogo_producto(
     }
     error = guardar_producto(sb, datos, None if producto is None else int(producto["id"]))
     if error and error.startswith("Se guardó"):
+        st.cache_data.clear()
         avisar("warning", error)
         return
     if error:
         st.error(error)
         return
     verbo = "agregado" if producto is None else "actualizado"
+    st.cache_data.clear()
     avisar("success", f"Producto {nombre} {verbo}.")
 
 
@@ -341,12 +343,14 @@ def dialogo_borrar_producto(sb: Client, producto: dict) -> None:
         if resultado:
             nivel, texto = resultado
             if nivel == "success":
+                st.cache_data.clear()
                 avisar("success", texto)
             elif nivel == "warning":
                 st.warning(texto)
             else:
                 st.error(texto)
             return
+        st.cache_data.clear()
         avisar("success", f"Producto {producto['nombre']} eliminado.")
 
 
@@ -479,6 +483,7 @@ def dialogo_importar(
         st.error(errores[0] if errores else "El archivo no tiene productos para importar.")
         return
     resumen = f"Importación lista: {creados} nuevos y {actualizados} actualizados."
+    st.cache_data.clear()
     if errores:
         avisar("warning", f"{resumen} {errores[0]}")
         return
@@ -607,6 +612,7 @@ def gestion_fletes(sb: Client, fletes: list) -> None:
                     st.error(f"No se pudieron guardar las tarifas. {texto_error(exc)}")
                 else:
                     st.session_state["flete_version"] = version + 1
+                    st.cache_data.clear()
                     avisar(
                         "success",
                         "Tarifas actualizadas. El costo total se recalcula con la tarifa nueva y el FOB no cambia.",
@@ -629,6 +635,7 @@ def gestion_fletes(sb: Client, fletes: list) -> None:
                     st.error(f"No se pudo agregar el flete. {texto_error(exc)}")
                 else:
                     st.session_state["flete_version"] = st.session_state.get("flete_version", 0) + 1
+                    st.cache_data.clear()
                     avisar("success", f"Tipo de flete {nombre_nuevo.strip()} agregado.")
         if fletes:
             st.markdown("**Eliminar flete**")
@@ -639,6 +646,7 @@ def gestion_fletes(sb: Client, fletes: list) -> None:
                 if error:
                     st.error(error)
                 else:
+                    st.cache_data.clear()
                     avisar("success", f"Flete {elegido} eliminado.")
 
 
@@ -680,6 +688,7 @@ def gestion_catalogo(
                         st.error(error)
                         return
                 st.session_state[f"{clave}_version"] = version + 1
+                st.cache_data.clear()
                 avisar("success", f"{etiqueta} actualizadas.")
     with columna_alta:
         with st.container(border=True):
@@ -692,6 +701,7 @@ def gestion_catalogo(
                 if error:
                     st.error(error)
                 else:
+                    st.cache_data.clear()
                     avisar("success", f"{singular.capitalize()} agregada.")
             if ordenados:
                 st.markdown(f"**Eliminar {singular}**")
@@ -702,6 +712,7 @@ def gestion_catalogo(
                     if error:
                         st.error(error)
                     else:
+                        st.cache_data.clear()
                         avisar("success", f"{elegido} eliminada.")
 
 

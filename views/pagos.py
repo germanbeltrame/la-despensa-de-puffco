@@ -245,6 +245,7 @@ def _formulario(sb: Client, cliente: dict, pendientes: list[dict]) -> None:
             st.error(aviso)
             return
         st.session_state["pago_limpiar"] = True
+        st.cache_data.clear()
         texto = f"Pago de {dinero_md(monto_usd)} registrado correctamente para {cliente['nombre']}."
         if aviso:
             avisar("warning", f"{texto} {aviso}")

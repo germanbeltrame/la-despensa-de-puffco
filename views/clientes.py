@@ -105,6 +105,7 @@ def dialogo_cliente(sb: Client, cliente: dict | None = None) -> None:
             elif error and not error.startswith("Se guardó"):
                 st.warning(error)
             else:
+                st.cache_data.clear()
                 if not esta_activo({"activo": activo}):
                     st.warning("El cliente está inactivo y no va a poder entrar hasta que lo actives.")
                 try:
@@ -126,12 +127,15 @@ def dialogo_cliente(sb: Client, cliente: dict | None = None) -> None:
         if cliente_id is None:
             st.warning(error or "No se pudo guardar el cliente.")
         elif error and error.startswith("Se guardó"):
+            st.cache_data.clear()
             avisar("warning", error)
         elif error:
             st.warning(error)
         elif cliente is None:
+            st.cache_data.clear()
             avisar("success", f"Cliente {datos_cliente(nombre, es_distribuidor)['nombre']} registrado.")
         else:
+            st.cache_data.clear()
             avisar("success", f"Cliente {datos_cliente(nombre, es_distribuidor)['nombre']} actualizado.")
     _mostrar_acceso(sufijo)
 
@@ -145,12 +149,14 @@ def dialogo_borrar_cliente(sb: Client, cliente: dict) -> None:
         if resultado:
             nivel, texto = resultado
             if nivel == "success":
+                st.cache_data.clear()
                 avisar("success", texto)
             elif nivel == "warning":
                 st.warning(texto)
             else:
                 st.error(texto)
             return
+        st.cache_data.clear()
         avisar("success", f"Cliente {cliente['nombre']} eliminado.")
 
 

@@ -35,6 +35,7 @@ def alta_rapida_cliente(sb: Client) -> None:
             st.warning(error)
             return
         st.session_state["cliente_venta_pendiente"] = nuevo_id
+        st.cache_data.clear()
         avisar("success", f"Cliente {datos_cliente(nombre, es_distribuidor)['nombre']} registrado y seleccionado.")
 
 
@@ -347,6 +348,7 @@ def _confirmar(
         return
     st.session_state["venta_limpiar"] = True
     st.session_state["carrito"] = {}
+    st.cache_data.clear()
     if errores_stock:
         avisar(
             "warning",
