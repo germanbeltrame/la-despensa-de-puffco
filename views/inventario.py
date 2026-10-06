@@ -56,6 +56,37 @@ def tarifa_guardada(producto: dict | None, fletes: list) -> float:
     return 0.0
 
 
+def etiqueta_flete(flete: dict) -> str:
+    nombre = " ".join(str(flete.get("nombre") or "").split()) or "Flete"
+    tarifa = float(flete.get("costo_usd_kg") or 0)
+    return f"{nombre} - USD {tarifa:.2f}/kg"
+
+
+def flete_inicial(producto: dict | None, fletes: list) -> int | None:
+    if not fletes:
+        return None
+    ids = [int(item["id"]) for item in fletes]
+    if producto and producto.get("flete_id") not in (None, ""):
+        try:
+            elegido = int(producto["flete_id"])
+        except (TypeError, ValueError):
+            elegido = None
+        if elegido in ids:
+            return elegido
+    tarifa = tarifa_guardada(producto, fletes)
+    for item in fletes:
+        if abs(float(item.get("costo_usd_kg") or 0) - tarifa) < 0.001:
+            return int(item["id"])
+    return ids[0]
+
+
+def tarifa_de_flete(fletes: list, flete_id) -> float:
+    for item in fletes:
+        if int(item["id"]) == int(flete_id):
+            return round(float(item.get("costo_usd_kg") or 0), 2)
+    return 0.0
+
+
 def costo_visible(producto: dict, tarifa: float, fee_recepcion: float, fee_giro: float) -> float:
     if producto.get("calcular_costo") is False:
         if producto.get("costo_total_usd") not in (None, ""):
@@ -200,7 +231,7 @@ def dialogo_producto(
         "categoria": f"prod_categoria_{sufijo}",
         "fob": f"prod_fob_{sufijo}",
         "peso": f"prod_peso_{sufijo}",
-        "precio_kg": f"prod_precio_kg_{sufijo}",
+        "flete": f"prod_flete_{sufijo}",
         "calcular": f"prod_calcular_{sufijo}",
         "costo": f"prod_costo_{sufijo}",
         "puntero": f"prod_puntero_{sufijo}",
@@ -230,7 +261,10 @@ def dialogo_producto(
         )
     sembrar(claves["fob"], 0.0 if producto is None else float(producto.get("costo_fob") or 0))
     sembrar(claves["peso"], 0.0 if producto is None else float(producto.get("peso_kg") or 0))
-    sembrar(claves["precio_kg"], tarifa_inicial)
+    opciones_flete = [int(item["id"]) for item in fletes]
+    indice_fletes = {int(item["id"]): item for item in fletes}
+    if opciones_flete and st.session_state.get(claves["flete"]) not in opciones_flete:
+        st.session_state[claves["flete"]] = flete_inicial(producto, fletes)
     sembrar(claves["calcular"], True if producto is None else producto.get("calcular_costo") is not False)
     sembrar(claves["costo"], costo_inicial)
     sembrar(claves["puntero"], 0.0 if producto is None else float(producto.get("precio_puntero_usd") or 0))
@@ -251,7 +285,15 @@ def dialogo_producto(
         )
         st.number_input("Costo FOB (USD)", min_value=0.0, step=0.01, key=claves["fob"])
         st.number_input("Peso (kg)", min_value=0.0, step=0.001, format="%.3f", key=claves["peso"])
-        st.number_input("Precio x KG (USD)", min_value=0.0, step=0.01, key=claves["precio_kg"])
+        if not opciones_flete:
+            st.warning("No hay fletes. Cargalos en Configuración General.")
+        else:
+            st.selectbox(
+                "Precio x KG",
+                opciones_flete,
+                format_func=lambda flete_id: etiqueta_flete(indice_fletes[int(flete_id)]),
+                key=claves["flete"],
+            )
     with derecha:
         st.number_input("Precio de venta (USD)", min_value=0.0, step=0.01, key=claves["puntero"])
         st.number_input("Precio distro (USD)", min_value=0.0, step=0.01, key=claves["distro"])
@@ -262,10 +304,15 @@ def dialogo_producto(
             st.checkbox("Activo", key=claves["activo"])
 
     calcular = st.checkbox("Calcular costo por fórmula", key=claves["calcular"])
+    precio_kg = (
+        tarifa_de_flete(fletes, st.session_state[claves["flete"]])
+        if opciones_flete and claves["flete"] in st.session_state
+        else 0.0
+    )
     costo_formula = costo_unitario(
         st.session_state[claves["fob"]],
         st.session_state[claves["peso"]],
-        st.session_state[claves["precio_kg"]],
+        precio_kg,
         fee_recepcion,
         fee_giro,
     )
@@ -296,11 +343,11 @@ def dialogo_producto(
     if claves["marca"] not in st.session_state or claves["categoria"] not in st.session_state:
         st.warning("Elegí una marca y una categoría.")
         return
-    precio_kg = round(float(st.session_state[claves["precio_kg"]]), 2)
-    flete_id = flete_de_tarifa(sb, fletes, precio_kg)
-    if flete_id is None:
-        st.warning("No se pudo guardar el precio por kilo.")
+    if not opciones_flete or claves["flete"] not in st.session_state:
+        st.warning("Elegí un flete. Si no hay ninguno, cargalo en Configuración General.")
         return
+    flete_id = int(st.session_state[claves["flete"]])
+    precio_kg = tarifa_de_flete(fletes, flete_id)
     datos = {
         "nombre": nombre,
         "marca": str(st.session_state[claves["marca"]]).strip() or "PUFFCO",
