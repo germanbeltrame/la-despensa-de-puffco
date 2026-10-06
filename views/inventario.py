@@ -224,6 +224,9 @@ def dialogo_producto(
     marcas: list | None = None,
     categorias: list | None = None,
 ) -> None:
+    cargados = leer_fletes(sb)
+    if cargados is not None:
+        fletes = cargados
     sufijo = "nuevo" if producto is None else str(int(producto["id"]))
     claves = {
         "nombre": f"prod_nombre_{sufijo}",
@@ -289,7 +292,7 @@ def dialogo_producto(
             st.warning("No hay fletes. Cargalos en Configuración General.")
         else:
             st.selectbox(
-                "Precio x KG",
+                "Flete aplicado",
                 opciones_flete,
                 format_func=lambda flete_id: etiqueta_flete(indice_fletes[int(flete_id)]),
                 key=claves["flete"],
