@@ -7,13 +7,23 @@ from supabase import Client
 
 from calculos import costo_unitario, margen_porcentaje
 from database import (
+    actualizar_categoria,
     actualizar_flete,
+    actualizar_marca,
+    asegurar_en_catalogo,
+    eliminar_categoria,
+    eliminar_flete,
+    eliminar_marca,
     eliminar_producto,
     esta_activo,
     guardar_producto,
+    insertar_categoria,
     insertar_flete,
+    insertar_marca,
+    leer_categorias,
     leer_configuracion,
     leer_fletes,
+    leer_marcas,
     leer_productos,
     texto_error,
 )
@@ -136,6 +146,43 @@ def texto_margen(precio, costo) -> str:
     return f"{margen:.1f} %"
 
 
+def _nombres_catalogo(registros: list, actual: str | None) -> list[str]:
+    nombres = []
+    for item in registros:
+        nombre = " ".join(str(item.get("nombre") or "").split())
+        if nombre and nombre not in nombres:
+            nombres.append(nombre)
+    nombres.sort(key=str.casefold)
+    vigente = " ".join(str(actual or "").split())
+    if vigente and vigente not in nombres:
+        nombres.insert(0, vigente)
+    return nombres
+
+
+def _selector_catalogo(etiqueta: str, clave: str, opciones: list[str] | None, aviso_vacio: str) -> None:
+    if opciones is None:
+        st.text_input(etiqueta, key=clave)
+        return
+    if not opciones:
+        st.warning(aviso_vacio)
+        return
+    st.selectbox(etiqueta, opciones, key=clave)
+
+
+def _opcion_inicial(opciones: list[str], actual: str | None, preferida: str) -> str:
+    vigente = " ".join(str(actual or "").split())
+    if vigente in opciones:
+        return vigente
+    if preferida in opciones:
+        return preferida
+    return opciones[0]
+
+
+def _fijar_opcion(clave: str, opciones: list[str], inicial: str) -> None:
+    if st.session_state.get(clave) not in opciones:
+        st.session_state[clave] = inicial
+
+
 @st.dialog("Producto", width="large")
 def dialogo_producto(
     sb: Client,
@@ -143,6 +190,8 @@ def dialogo_producto(
     producto: dict | None,
     fee_recepcion: float,
     fee_giro: float,
+    marcas: list | None = None,
+    categorias: list | None = None,
 ) -> None:
     sufijo = "nuevo" if producto is None else str(int(producto["id"]))
     claves = {
@@ -163,8 +212,22 @@ def dialogo_producto(
     tarifa_inicial = tarifa_guardada(producto, fletes)
     costo_inicial = 0.0 if producto is None else costo_visible(producto, tarifa_inicial, fee_recepcion, fee_giro)
     sembrar(claves["nombre"], "" if producto is None else producto["nombre"])
-    sembrar(claves["marca"], "PUFFCO" if producto is None else (producto.get("marca") or ""))
-    sembrar(claves["categoria"], "VAPORIZADOR" if producto is None else (producto.get("categoria") or ""))
+    marca_actual = None if producto is None else (producto.get("marca") or "")
+    categoria_actual = None if producto is None else (producto.get("categoria") or "")
+    opciones_marca = None if marcas is None else _nombres_catalogo(marcas, marca_actual)
+    opciones_categoria = None if categorias is None else _nombres_catalogo(categorias, categoria_actual)
+    if opciones_marca is None:
+        sembrar(claves["marca"], "PUFFCO" if producto is None else (producto.get("marca") or ""))
+    elif opciones_marca:
+        _fijar_opcion(claves["marca"], opciones_marca, _opcion_inicial(opciones_marca, marca_actual, "PUFFCO"))
+    if opciones_categoria is None:
+        sembrar(claves["categoria"], "VAPORIZADOR" if producto is None else (producto.get("categoria") or ""))
+    elif opciones_categoria:
+        _fijar_opcion(
+            claves["categoria"],
+            opciones_categoria,
+            _opcion_inicial(opciones_categoria, categoria_actual, "VAPORIZADOR"),
+        )
     sembrar(claves["fob"], 0.0 if producto is None else float(producto.get("costo_fob") or 0))
     sembrar(claves["peso"], 0.0 if producto is None else float(producto.get("peso_kg") or 0))
     sembrar(claves["precio_kg"], tarifa_inicial)
@@ -179,8 +242,13 @@ def dialogo_producto(
     izquierda, derecha = st.columns(2)
     with izquierda:
         st.text_input("Nombre", key=claves["nombre"])
-        st.text_input("Marca", key=claves["marca"])
-        st.text_input("Categoría", key=claves["categoria"])
+        _selector_catalogo("Marca", claves["marca"], opciones_marca, "No hay marcas. Cargalas en Configuración General.")
+        _selector_catalogo(
+            "Categoría",
+            claves["categoria"],
+            opciones_categoria,
+            "No hay categorías. Cargalas en Configuración General.",
+        )
         st.number_input("Costo FOB (USD)", min_value=0.0, step=0.01, key=claves["fob"])
         st.number_input("Peso (kg)", min_value=0.0, step=0.001, format="%.3f", key=claves["peso"])
         st.number_input("Precio x KG (USD)", min_value=0.0, step=0.01, key=claves["precio_kg"])
@@ -221,6 +289,12 @@ def dialogo_producto(
     nombre = " ".join(str(st.session_state[claves["nombre"]]).split())
     if not nombre:
         st.warning("El nombre del producto es obligatorio.")
+        return
+    if opciones_marca == [] or opciones_categoria == []:
+        st.warning("Elegí una marca y una categoría. Si no hay ninguna, cargalas en Configuración General.")
+        return
+    if claves["marca"] not in st.session_state or claves["categoria"] not in st.session_state:
+        st.warning("Elegí una marca y una categoría.")
         return
     precio_kg = round(float(st.session_state[claves["precio_kg"]]), 2)
     flete_id = flete_de_tarifa(sb, fletes, precio_kg)
@@ -341,6 +415,8 @@ def importar_productos(
             "activo": True if existente is None else existente.get("activo") is not False,
             "incompleto": peso == 0 or fob <= 0,
         }
+        asegurar_en_catalogo(sb, "marcas", datos["marca"])
+        asegurar_en_catalogo(sb, "categorias", datos["categoria"])
         error = guardar_producto(sb, datos, None if existente is None else int(existente["id"]))
         if error and not error.startswith("Se guardó"):
             errores.append(f"Fila {numero}: {error}")
@@ -439,6 +515,8 @@ def tabla_productos(
     filtrados: list,
     fee_recepcion: float,
     fee_giro: float,
+    marcas: list | None,
+    categorias: list | None,
 ) -> None:
     proporciones = [0.42, 1.55, 0.85, 0.9, 0.42, 1.05, 0.72, 0.62, 0.7, 0.7]
     cabecera = st.columns(proporciones, vertical_alignment="center")
@@ -476,7 +554,7 @@ def tabla_productos(
                     icon=":material/edit:",
                     width="stretch",
                 ):
-                    dialogo_producto(sb, fletes, producto, fee_recepcion, fee_giro)
+                    dialogo_producto(sb, fletes, producto, fee_recepcion, fee_giro, marcas, categorias)
             with columnas[9]:
                 if st.button(
                     "Borrar",
@@ -552,6 +630,79 @@ def gestion_fletes(sb: Client, fletes: list) -> None:
                 else:
                     st.session_state["flete_version"] = st.session_state.get("flete_version", 0) + 1
                     avisar("success", f"Tipo de flete {nombre_nuevo.strip()} agregado.")
+        if fletes:
+            st.markdown("**Eliminar flete**")
+            opciones_borrar = {str(item["nombre"]): int(item["id"]) for item in fletes}
+            elegido = st.selectbox("Flete a eliminar", list(opciones_borrar), key="flete_a_eliminar")
+            if st.button("Eliminar flete", key="btn_eliminar_flete"):
+                error = eliminar_flete(sb, opciones_borrar[elegido])
+                if error:
+                    st.error(error)
+                else:
+                    avisar("success", f"Flete {elegido} eliminado.")
+
+
+def gestion_catalogo(
+    sb: Client,
+    etiqueta: str,
+    singular: str,
+    registros: list,
+    insertar,
+    actualizar,
+    eliminar,
+    clave: str,
+) -> None:
+    st.caption("Estos nombres se eligen al cargar un producto, así no quedan diferencias de tipeo.")
+    columna_lista, columna_alta = st.columns([1.7, 1], vertical_alignment="top")
+    ordenados = sorted(registros, key=lambda item: str(item.get("nombre") or "").lower())
+    with columna_lista:
+        if not ordenados:
+            st.warning(f"Todavía no hay {etiqueta.lower()}.")
+        else:
+            editor = pd.DataFrame(ordenados)[["id", "nombre"]]
+            version = st.session_state.get(f"{clave}_version", 0)
+            editado = st.data_editor(
+                editor,
+                hide_index=True,
+                num_rows="fixed",
+                width="stretch",
+                height=min(320, 56 + 36 * len(ordenados)),
+                key=f"editor_{clave}_{version}",
+                column_order=["nombre"],
+                column_config={
+                    "nombre": st.column_config.TextColumn(etiqueta, required=True),
+                },
+            )
+            if st.button(f"Guardar {etiqueta.lower()}", type="primary", key=f"guardar_{clave}"):
+                for indice, (_, fila) in enumerate(editado.iterrows()):
+                    error = actualizar(sb, int(ordenados[indice]["id"]), str(fila["nombre"]))
+                    if error:
+                        st.error(error)
+                        return
+                st.session_state[f"{clave}_version"] = version + 1
+                avisar("success", f"{etiqueta} actualizadas.")
+    with columna_alta:
+        with st.container(border=True):
+            with st.form(f"alta_{clave}", clear_on_submit=True):
+                st.markdown(f"**Nueva {singular}**")
+                nombre_nuevo = st.text_input("Nombre")
+                crear = st.form_submit_button("Agregar", width="stretch")
+            if crear:
+                error = insertar(sb, nombre_nuevo)
+                if error:
+                    st.error(error)
+                else:
+                    avisar("success", f"{singular.capitalize()} agregada.")
+            if ordenados:
+                st.markdown(f"**Eliminar {singular}**")
+                opciones = {f"{item['nombre']}": int(item["id"]) for item in ordenados}
+                elegido = st.selectbox(singular.capitalize(), list(opciones), key=f"eliminar_sel_{clave}")
+                if st.button("Eliminar", key=f"eliminar_{clave}"):
+                    error = eliminar(sb, opciones[elegido])
+                    if error:
+                        st.error(error)
+                    else:
+                        avisar("success", f"{elegido} eliminada.")
 
 
 def pagina_inventario(sb: Client) -> None:
@@ -601,7 +752,10 @@ def pagina_inventario(sb: Client) -> None:
     if st.session_state.get("inv_marca") not in opciones_marca:
         st.session_state["inv_marca"] = "Todas"
 
-    tab_productos, tab_fletes = st.tabs(["Lista de Productos", "Configuración de Fletes"])
+    marcas_catalogo = leer_marcas(sb)
+    categorias_catalogo = leer_categorias(sb)
+
+    tab_productos, tab_config = st.tabs(["Lista de Productos", "Configuración General"])
 
     with tab_productos:
         mostrar_kpis(
@@ -630,7 +784,9 @@ def pagina_inventario(sb: Client) -> None:
         col_alta, col_importar, _espacio = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
         with col_alta:
             if st.button("+ Nuevo producto", type="primary", width="stretch"):
-                dialogo_producto(sb, fletes, None, fee_recepcion, fee_giro)
+                dialogo_producto(
+                    sb, fletes, None, fee_recepcion, fee_giro, marcas_catalogo, categorias_catalogo
+                )
         with col_importar:
             if st.button("Importar Productos", width="stretch"):
                 dialogo_importar(sb, fletes, productos, fee_recepcion, fee_giro)
@@ -656,7 +812,39 @@ def pagina_inventario(sb: Client) -> None:
         elif not filtrados:
             st.warning("Ningún producto coincide con los filtros.")
         else:
-            tabla_productos(sb, fletes, filtrados, fee_recepcion, fee_giro)
+            tabla_productos(
+                sb, fletes, filtrados, fee_recepcion, fee_giro, marcas_catalogo, categorias_catalogo
+            )
 
-    with tab_fletes:
-        gestion_fletes(sb, fletes)
+    with tab_config:
+        sub_fletes, sub_marcas, sub_categorias = st.tabs(["Fletes", "Marcas", "Categorías"])
+        with sub_fletes:
+            gestion_fletes(sb, fletes)
+        with sub_marcas:
+            if marcas_catalogo is None:
+                st.warning("No se pudieron leer las marcas. Ejecutá 03_abm_marcas_categorias.sql en Supabase.")
+            else:
+                gestion_catalogo(
+                    sb,
+                    "Marcas",
+                    "marca",
+                    marcas_catalogo,
+                    insertar_marca,
+                    actualizar_marca,
+                    eliminar_marca,
+                    "marcas",
+                )
+        with sub_categorias:
+            if categorias_catalogo is None:
+                st.warning("No se pudieron leer las categorías. Ejecutá 03_abm_marcas_categorias.sql en Supabase.")
+            else:
+                gestion_catalogo(
+                    sb,
+                    "Categorías",
+                    "categoría",
+                    categorias_catalogo,
+                    insertar_categoria,
+                    actualizar_categoria,
+                    eliminar_categoria,
+                    "categorias",
+                )

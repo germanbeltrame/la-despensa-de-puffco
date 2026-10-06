@@ -558,21 +558,177 @@ def esta_activo(fila: dict | None) -> bool:
 
 
 def actualizar_flete(sb: Client, flete_id: int, nombre: str, costo_usd_kg: float) -> None:
-    sb.table("tipos_flete").update(
+    respuesta = sb.table("tipos_flete").update(
         {
             "nombre": nombre,
             "costo_usd_kg": round(float(costo_usd_kg), 2),
         }
     ).eq("id", int(flete_id)).execute()
+    if not respuesta.data:
+        raise RuntimeError("No se pudo actualizar el flete. Revisá los permisos en Supabase.")
 
 
 def insertar_flete(sb: Client, nombre: str, costo_usd_kg: float) -> None:
-    sb.table("tipos_flete").insert(
+    respuesta = sb.table("tipos_flete").insert(
         {
             "nombre": nombre,
             "costo_usd_kg": round(float(costo_usd_kg), 2),
         }
     ).execute()
+    if not respuesta.data:
+        raise RuntimeError("No se pudo guardar el flete. Revisá los permisos en Supabase.")
+
+
+def eliminar_flete(sb: Client, flete_id: int) -> str | None:
+    try:
+        usados = (
+            sb.table("productos").select("id").eq("flete_id", int(flete_id)).limit(1).execute().data or []
+        )
+    except Exception as exc:
+        if "flete_id" not in texto_error(exc).lower():
+            return f"No se pudo eliminar el flete. {texto_error(exc)}"
+        usados = []
+    if usados:
+        return "Hay productos que usan este flete. Cambiá su precio por kilo antes de eliminarlo."
+    try:
+        respuesta = sb.table("tipos_flete").delete().eq("id", int(flete_id)).execute()
+    except Exception as exc:
+        if es_en_uso(exc):
+            return "Hay productos que usan este flete. Cambiá su precio por kilo antes de eliminarlo."
+        return f"No se pudo eliminar el flete. {texto_error(exc)}"
+    if not respuesta.data:
+        return "No se pudo eliminar el flete. Revisá los permisos en Supabase."
+    return None
+
+
+def _nombre_catalogo(nombre: str) -> str:
+    return " ".join(str(nombre or "").split())
+
+
+def _patron_igual(nombre: str) -> str:
+    return nombre.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _tabla_catalogo_ausente(exc: Exception) -> bool:
+    texto = texto_error(exc).lower()
+    return any(marca in texto for marca in ("pgrst205", "does not exist", "42p01", "schema cache"))
+
+
+def leer_marcas(sb: Client):
+    return consultar(sb, lambda cliente: cargar_todo(cliente, "marcas"), "No se pudieron leer las marcas.")
+
+
+def leer_categorias(sb: Client):
+    return consultar(sb, lambda cliente: cargar_todo(cliente, "categorias"), "No se pudieron leer las categorías.")
+
+
+def _nombre_ocupado(sb: Client, tabla: str, nombre: str, propio_id: int | None) -> bool:
+    filas = sb.table(tabla).select("id,nombre").ilike("nombre", _patron_igual(nombre)).execute().data or []
+    clave = nombre.casefold()
+    for fila in filas:
+        if propio_id is not None and int(fila["id"]) == int(propio_id):
+            continue
+        if _nombre_catalogo(fila.get("nombre")).casefold() == clave:
+            return True
+    return False
+
+
+def _insertar_catalogo(sb: Client, tabla: str, etiqueta: str, nombre: str) -> str | None:
+    limpio = _nombre_catalogo(nombre)
+    if not limpio:
+        return f"El nombre de la {etiqueta} es obligatorio."
+    try:
+        if _nombre_ocupado(sb, tabla, limpio, None):
+            return f"Ya existe una {etiqueta} con ese nombre."
+        respuesta = sb.table(tabla).insert({"nombre": limpio}).execute()
+    except Exception as exc:
+        if es_duplicado(exc):
+            return f"Ya existe una {etiqueta} con ese nombre."
+        return f"No se pudo guardar la {etiqueta}. {texto_error(exc)}"
+    if not respuesta.data:
+        return f"No se pudo guardar la {etiqueta}. Revisá los permisos en Supabase."
+    return None
+
+
+def _actualizar_catalogo(sb: Client, tabla: str, columna: str, etiqueta: str, item_id: int, nombre: str) -> str | None:
+    limpio = _nombre_catalogo(nombre)
+    if not limpio:
+        return f"El nombre de la {etiqueta} es obligatorio."
+    try:
+        actuales = sb.table(tabla).select("nombre").eq("id", int(item_id)).limit(1).execute().data or []
+        if not actuales:
+            return f"No se encontró la {etiqueta}."
+        anterior = _nombre_catalogo(actuales[0].get("nombre"))
+        if anterior.casefold() == limpio.casefold() and anterior == limpio:
+            return None
+        if _nombre_ocupado(sb, tabla, limpio, int(item_id)):
+            return f"Ya existe una {etiqueta} con ese nombre."
+        respuesta = sb.table(tabla).update({"nombre": limpio}).eq("id", int(item_id)).execute()
+        if not respuesta.data:
+            return f"No se pudo actualizar la {etiqueta}. Revisá los permisos en Supabase."
+        if anterior != limpio:
+            sb.table("productos").update({columna: limpio}).eq(columna, anterior).execute()
+    except Exception as exc:
+        if es_duplicado(exc):
+            return f"Ya existe una {etiqueta} con ese nombre."
+        return f"No se pudo actualizar la {etiqueta}. {texto_error(exc)}"
+    return None
+
+
+def _eliminar_catalogo(sb: Client, tabla: str, columna: str, etiqueta: str, item_id: int) -> str | None:
+    try:
+        actuales = sb.table(tabla).select("nombre").eq("id", int(item_id)).limit(1).execute().data or []
+        if not actuales:
+            return f"No se encontró la {etiqueta}."
+        nombre = _nombre_catalogo(actuales[0].get("nombre"))
+        usados = sb.table("productos").select("id").eq(columna, nombre).limit(1).execute().data or []
+        if usados:
+            return f"Hay productos con esta {etiqueta}. Cambiales el valor antes de eliminarla."
+        respuesta = sb.table(tabla).delete().eq("id", int(item_id)).execute()
+    except Exception as exc:
+        return f"No se pudo eliminar la {etiqueta}. {texto_error(exc)}"
+    if not respuesta.data:
+        return f"No se pudo eliminar la {etiqueta}. Revisá los permisos en Supabase."
+    return None
+
+
+def insertar_marca(sb: Client, nombre: str) -> str | None:
+    return _insertar_catalogo(sb, "marcas", "marca", nombre)
+
+
+def actualizar_marca(sb: Client, marca_id: int, nombre: str) -> str | None:
+    return _actualizar_catalogo(sb, "marcas", "marca", "marca", marca_id, nombre)
+
+
+def eliminar_marca(sb: Client, marca_id: int) -> str | None:
+    return _eliminar_catalogo(sb, "marcas", "marca", "marca", marca_id)
+
+
+def insertar_categoria(sb: Client, nombre: str) -> str | None:
+    return _insertar_catalogo(sb, "categorias", "categoría", nombre)
+
+
+def actualizar_categoria(sb: Client, categoria_id: int, nombre: str) -> str | None:
+    return _actualizar_catalogo(sb, "categorias", "categoria", "categoría", categoria_id, nombre)
+
+
+def eliminar_categoria(sb: Client, categoria_id: int) -> str | None:
+    return _eliminar_catalogo(sb, "categorias", "categoria", "categoría", categoria_id)
+
+
+def asegurar_en_catalogo(sb: Client, tabla: str, nombre: str) -> None:
+    """Registra el nombre si la tabla existe. No frena una importación si todavía no está creada."""
+    limpio = _nombre_catalogo(nombre)
+    if not limpio:
+        return
+    try:
+        if _nombre_ocupado(sb, tabla, limpio, None):
+            return
+        sb.table(tabla).insert({"nombre": limpio}).execute()
+    except Exception as exc:
+        if es_duplicado(exc) or _tabla_catalogo_ausente(exc):
+            return
+        return
 
 
 def registrar_pago(sb: Client, payload: dict) -> str | None:
