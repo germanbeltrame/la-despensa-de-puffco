@@ -1,6 +1,5 @@
 import io
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -21,7 +20,6 @@ from ui import columna_usd, dinero, mostrar_kpis, mostrar_libro
 
 TIPO_RESUMEN = "Sin Detalle (Resumido)"
 TIPO_DETALLE = "Con Detalle (Analítico)"
-FUENTE = Path(r"C:\Windows\Fonts")
 
 
 def pagina_cuentas(sb: Client) -> None:
@@ -211,16 +209,11 @@ def _excel(tabla: pd.DataFrame, hoja: str) -> bytes:
 def _pdf(titulo: str, tabla: pd.DataFrame) -> bytes:
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
-    regular = FUENTE / "arial.ttf"
-    negrita = FUENTE / "arialbd.ttf"
-    pdf.add_font("Arial", fname=str(regular))
-    if negrita.exists():
-        pdf.add_font("Arial", style="B", fname=str(negrita))
-    pdf.set_font("Arial", size=10)
+    pdf.set_font("helvetica", size=10)
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
+    pdf.set_font("helvetica", "B", 16)
     pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Arial", size=9)
+    pdf.set_font("helvetica", size=9)
     pdf.cell(
         0,
         6,
@@ -229,7 +222,7 @@ def _pdf(titulo: str, tabla: pd.DataFrame) -> bytes:
         new_y="NEXT",
     )
     pdf.ln(2)
-    pdf.set_font("Arial", size=8)
+    pdf.set_font("helvetica", size=8)
     columnas = list(tabla.columns)
     pesos = _pesos_columnas(columnas)
     with pdf.table(col_widths=pesos, text_align="LEFT", line_height=5, repeat_headings=1) as reporte:
