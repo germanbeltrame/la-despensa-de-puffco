@@ -794,9 +794,9 @@ def insertar_concepto_gasto(sb: Client, nombre: str) -> str | None:
     return None
 
 
-def eliminar_concepto_gasto(sb: Client, concepto_id: int) -> str | None:
+def eliminar_concepto_gasto(sb: Client, concepto_id: str) -> str | None:
     try:
-        respuesta = sb.table("conceptos_gasto").delete().eq("id", int(concepto_id)).execute()
+        respuesta = sb.table("conceptos_gasto").delete().eq("id", str(concepto_id)).execute()
     except Exception as exc:
         if _tabla_catalogo_ausente(exc):
             return "Falta la tabla conceptos_gasto. Ejecutá 06_conceptos_gasto.sql en Supabase."

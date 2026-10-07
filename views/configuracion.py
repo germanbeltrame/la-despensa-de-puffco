@@ -197,7 +197,7 @@ def gestion_conceptos(sb: Client, conceptos: list) -> None:
                     avisar("success", f"Concepto {nombre_nuevo.strip()} agregado.")
             if ordenados:
                 st.markdown("**Eliminar concepto**")
-                opciones = {str(item["nombre"]): int(item["id"]) for item in ordenados}
+                opciones = {str(item["nombre"]): str(item["id"]) for item in ordenados}
                 elegido = st.selectbox("Concepto", list(opciones), key="eliminar_sel_concepto_gasto")
                 if st.button("Eliminar", key="eliminar_concepto_gasto"):
                     error = eliminar_concepto_gasto(sb, opciones[elegido])
