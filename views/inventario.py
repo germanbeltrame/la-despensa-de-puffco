@@ -25,6 +25,7 @@ from database import (
     leer_fletes,
     leer_marcas,
     leer_productos,
+    subir_imagen_producto,
     texto_error,
 )
 from ui import avisar, dinero, miniatura, mostrar_kpis, sembrar
@@ -246,7 +247,6 @@ def dialogo_producto(
         "puntero": f"prod_puntero_{sufijo}",
         "distro": f"prod_distro_{sufijo}",
         "stock": f"prod_stock_{sufijo}",
-        "imagen": f"prod_imagen_{sufijo}",
         "activo": f"prod_activo_{sufijo}",
     }
     tarifa_inicial = tarifa_guardada(producto, fletes)
@@ -279,8 +279,8 @@ def dialogo_producto(
     sembrar(claves["puntero"], 0.0 if producto is None else float(producto.get("precio_puntero_usd") or 0))
     sembrar(claves["distro"], 0.0 if producto is None else float(producto.get("precio_distro_usd") or 0))
     sembrar(claves["stock"], 0 if producto is None else int(producto.get("stock_actual") or 0))
-    sembrar(claves["imagen"], "" if producto is None else (producto.get("imagen_url") or ""))
     sembrar(claves["activo"], True if producto is None else producto.get("activo") is not False)
+    imagen_actual = "" if producto is None else str(producto.get("imagen_url") or "").strip()
 
     izquierda, derecha = st.columns(2)
     with izquierda:
@@ -307,8 +307,17 @@ def dialogo_producto(
         st.number_input("Precio de venta (USD)", min_value=0.0, step=0.01, key=claves["puntero"])
         st.number_input("Precio distro (USD)", min_value=0.0, step=0.01, key=claves["distro"])
         st.number_input("Stock", min_value=0, step=1, key=claves["stock"])
-        st.text_input("URL de la imagen", key=claves["imagen"], placeholder="Opcional")
-        miniatura(str(st.session_state.get(claves["imagen"]) or "").strip(), 96)
+        archivo_imagen = st.file_uploader(
+            "Imagen del producto",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"prod_archivo_{sufijo}",
+        )
+        if archivo_imagen is not None:
+            st.image(archivo_imagen, width=96)
+        else:
+            miniatura(imagen_actual, 96)
+            if imagen_actual:
+                st.caption("Si no subís otra foto, se mantiene esta.")
         if producto is not None:
             st.checkbox("Activo", key=claves["activo"])
 
@@ -357,6 +366,13 @@ def dialogo_producto(
         return
     flete_id = int(st.session_state[claves["flete"]])
     precio_kg = tarifa_de_flete(fletes, flete_id)
+    imagen_url = imagen_actual or None
+    if archivo_imagen is not None:
+        try:
+            imagen_url = subir_imagen_producto(sb, archivo_imagen)
+        except Exception as exc:
+            st.error(f"No se pudo subir la imagen. {texto_error(exc)}")
+            return
     datos = {
         "nombre": nombre,
         "marca": str(st.session_state[claves["marca"]]).strip() or "PUFFCO",
@@ -374,7 +390,7 @@ def dialogo_producto(
         "precio_puntero_usd": round(float(st.session_state[claves["puntero"]]), 2),
         "precio_distro_usd": round(float(st.session_state[claves["distro"]]), 2),
         "stock_actual": int(st.session_state[claves["stock"]]),
-        "imagen_url": str(st.session_state[claves["imagen"]]).strip() or None,
+        "imagen_url": imagen_url,
         "activo": True if producto is None else bool(st.session_state[claves["activo"]]),
     }
     error = guardar_producto(sb, datos, None if producto is None else int(producto["id"]))

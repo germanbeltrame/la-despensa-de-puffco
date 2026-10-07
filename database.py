@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import date, timedelta, timezone
 from pathlib import Path
 
@@ -475,6 +476,52 @@ def cliente_tiene_movimientos(sb: Client, cliente_id: int) -> bool:
         return True
     pagos = sb.table("pagos").select("id").eq("cliente_id", int(cliente_id)).limit(1).execute().data or []
     return bool(pagos)
+
+
+BUCKET_PRODUCTOS = "productos"
+_TIPOS_IMAGEN = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
+
+
+def tipo_imagen(nombre: str, tipo: str) -> tuple[str, str] | None:
+    limpio = (tipo or "").split(";")[0].strip().lower()
+    if limpio == "image/jpg":
+        limpio = "image/jpeg"
+    if limpio in _TIPOS_IMAGEN:
+        return limpio, _TIPOS_IMAGEN[limpio]
+    archivo = (nombre or "").lower()
+    if archivo.endswith(".png"):
+        return "image/png", ".png"
+    if archivo.endswith(".jpeg") or archivo.endswith(".jpg"):
+        return "image/jpeg", ".jpg"
+    if archivo.endswith(".webp"):
+        return "image/webp", ".webp"
+    return None
+
+
+def subir_imagen_producto(sb: Client, archivo) -> str:
+    """Sube una imagen al bucket público y devuelve su URL."""
+    tipo = tipo_imagen(getattr(archivo, "name", ""), getattr(archivo, "type", "") or "")
+    if tipo is None:
+        raise ValueError("La imagen tiene que ser png, jpg o webp.")
+    contenido = archivo.getvalue()
+    if not contenido:
+        raise ValueError("El archivo de imagen está vacío.")
+    mime, extension = tipo
+    ruta = f"{uuid.uuid4().hex}{extension}"
+    autorizacion = sb.postgrest.headers.get("Authorization")
+    if autorizacion:
+        sb.storage.session.headers["Authorization"] = str(autorizacion)
+        sb.storage._headers["Authorization"] = str(autorizacion)
+    sb.storage.from_(BUCKET_PRODUCTOS).upload(
+        ruta,
+        contenido,
+        file_options={"content-type": mime},
+    )
+    return sb.storage.from_(BUCKET_PRODUCTOS).get_public_url(ruta)
 
 
 def guardar_producto(sb: Client, datos: dict, producto_id: int | None) -> str | None:
