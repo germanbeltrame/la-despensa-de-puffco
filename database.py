@@ -764,6 +764,48 @@ def eliminar_categoria(sb: Client, categoria_id: int) -> str | None:
     return _eliminar_catalogo(sb, "categorias", "categoria", "categoría", categoria_id)
 
 
+def leer_conceptos_gasto(sb: Client):
+    filas = consultar(
+        sb,
+        lambda cliente: cargar_todo(cliente, "conceptos_gasto"),
+        "No se pudieron leer los conceptos de gasto.",
+    )
+    if filas is None:
+        return None
+    return sorted(filas, key=lambda item: str(item.get("nombre") or "").casefold())
+
+
+def insertar_concepto_gasto(sb: Client, nombre: str) -> str | None:
+    limpio = _nombre_catalogo(nombre)
+    if not limpio:
+        return "El nombre del concepto es obligatorio."
+    try:
+        if _nombre_ocupado(sb, "conceptos_gasto", limpio, None):
+            return "Ya existe un concepto con ese nombre."
+        respuesta = sb.table("conceptos_gasto").insert({"nombre": limpio}).execute()
+    except Exception as exc:
+        if es_duplicado(exc):
+            return "Ya existe un concepto con ese nombre."
+        if _tabla_catalogo_ausente(exc):
+            return "Falta la tabla conceptos_gasto. Ejecutá 06_conceptos_gasto.sql en Supabase."
+        return f"No se pudo guardar el concepto. {texto_error(exc)}"
+    if not respuesta.data:
+        return "No se pudo guardar el concepto. Revisá los permisos en Supabase."
+    return None
+
+
+def eliminar_concepto_gasto(sb: Client, concepto_id: int) -> str | None:
+    try:
+        respuesta = sb.table("conceptos_gasto").delete().eq("id", int(concepto_id)).execute()
+    except Exception as exc:
+        if _tabla_catalogo_ausente(exc):
+            return "Falta la tabla conceptos_gasto. Ejecutá 06_conceptos_gasto.sql en Supabase."
+        return f"No se pudo eliminar el concepto. {texto_error(exc)}"
+    if not respuesta.data:
+        return "No se pudo eliminar el concepto. Revisá los permisos en Supabase."
+    return None
+
+
 def asegurar_en_catalogo(sb: Client, tabla: str, nombre: str) -> None:
     """Registra el nombre si la tabla existe. No frena una importación si todavía no está creada."""
     limpio = _nombre_catalogo(nombre)

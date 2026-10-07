@@ -38,6 +38,11 @@ SECCIONES = [
         "icono": "bar-chart",
         "material": ":material/bar_chart:",
     },
+    {
+        "menu": "Configuración",
+        "icono": "gear",
+        "material": ":material/settings:",
+    },
 ]
 
 ESTILO_MENU = {

@@ -7,19 +7,11 @@ from supabase import Client
 
 from calculos import costo_unitario, margen_porcentaje
 from database import (
-    actualizar_categoria,
-    actualizar_flete,
-    actualizar_marca,
     asegurar_en_catalogo,
-    eliminar_categoria,
-    eliminar_flete,
-    eliminar_marca,
     eliminar_producto,
     esta_activo,
     guardar_producto,
-    insertar_categoria,
     insertar_flete,
-    insertar_marca,
     leer_categorias,
     leer_configuracion,
     leer_fletes,
@@ -283,17 +275,17 @@ def dialogo_producto(
     izquierda, derecha = st.columns(2)
     with izquierda:
         st.text_input("Nombre", key=claves["nombre"])
-        _selector_catalogo("Marca", claves["marca"], opciones_marca, "No hay marcas. Cargalas en Configuración General.")
+        _selector_catalogo("Marca", claves["marca"], opciones_marca, "No hay marcas. Cargalas en Configuración.")
         _selector_catalogo(
             "Categoría",
             claves["categoria"],
             opciones_categoria,
-            "No hay categorías. Cargalas en Configuración General.",
+            "No hay categorías. Cargalas en Configuración.",
         )
         st.number_input("Costo FOB (USD)", min_value=0.0, step=0.01, key=claves["fob"])
         st.number_input("Peso (kg)", min_value=0.0, step=0.001, format="%.3f", key=claves["peso"])
         if not opciones_flete:
-            st.warning("No hay fletes. Cargalos en Configuración General.")
+            st.warning("No hay fletes. Cargalos en Configuración.")
         else:
             st.selectbox(
                 "Flete aplicado",
@@ -354,13 +346,13 @@ def dialogo_producto(
         st.warning("El nombre del producto es obligatorio.")
         return
     if opciones_marca == [] or opciones_categoria == []:
-        st.warning("Elegí una marca y una categoría. Si no hay ninguna, cargalas en Configuración General.")
+        st.warning("Elegí una marca y una categoría. Si no hay ninguna, cargalas en Configuración.")
         return
     if claves["marca"] not in st.session_state or claves["categoria"] not in st.session_state:
         st.warning("Elegí una marca y una categoría.")
         return
     if not opciones_flete or claves["flete"] not in st.session_state:
-        st.warning("Elegí un flete. Si no hay ninguno, cargalo en Configuración General.")
+        st.warning("Elegí un flete. Si no hay ninguno, cargalo en Configuración.")
         return
     flete_id = int(st.session_state[claves["flete"]])
     precio_kg = tarifa_de_flete(fletes, flete_id)
@@ -653,151 +645,6 @@ def tabla_productos(
                     dialogo_borrar_producto(sb, producto)
 
 
-def gestion_fletes(sb: Client, fletes: list) -> None:
-    st.caption("Costo de envío en USD por kilo. Se usa al calcular el costo de cada producto.")
-    columna_tarifas, columna_alta = st.columns([1.7, 1], vertical_alignment="top")
-
-    with columna_tarifas:
-        if not fletes:
-            st.warning("No hay tipos de flete cargados.")
-        else:
-            editor = pd.DataFrame(fletes)[["id", "nombre", "costo_usd_kg"]]
-            version = st.session_state.get("flete_version", 0)
-            editado = st.data_editor(
-                editor,
-                hide_index=True,
-                num_rows="fixed",
-                width="stretch",
-                height=min(320, 56 + 36 * len(fletes)),
-                key=f"editor_fletes_{version}",
-                column_order=["nombre", "costo_usd_kg"],
-                column_config={
-                    "nombre": st.column_config.TextColumn("Tipo de flete", required=True),
-                    "costo_usd_kg": st.column_config.NumberColumn(
-                        "USD por kg",
-                        min_value=0.0,
-                        step=0.01,
-                        format="%.2f",
-                    ),
-                },
-            )
-            if st.button("Guardar tarifas", type="primary"):
-                try:
-                    for indice, (_, fila) in enumerate(editado.iterrows()):
-                        nombre_flete = str(fila["nombre"]).strip()
-                        if not nombre_flete:
-                            st.warning("Cada tipo de flete necesita un nombre.")
-                            return
-                        flete_id = int(fila["id"]) if "id" in editado.columns else int(fletes[indice]["id"])
-                        actualizar_flete(sb, flete_id, nombre_flete, float(fila["costo_usd_kg"]))
-                except Exception as exc:
-                    st.error(f"No se pudieron guardar las tarifas. {texto_error(exc)}")
-                else:
-                    st.session_state["flete_version"] = version + 1
-                    st.cache_data.clear()
-                    avisar(
-                        "success",
-                        "Tarifas actualizadas. El costo total se recalcula con la tarifa nueva y el FOB no cambia.",
-                    )
-
-    with columna_alta:
-        with st.container(border=True):
-            with st.form("nuevo_flete", clear_on_submit=True):
-                st.markdown("**Nuevo tipo de flete**")
-                nombre_nuevo = st.text_input("Nombre del flete")
-                tarifa_nueva = st.number_input("Tarifa USD por kg", min_value=0.0, step=0.01)
-                crear_flete = st.form_submit_button("Agregar tipo de flete", width="stretch")
-        if crear_flete:
-            if not nombre_nuevo.strip():
-                st.warning("El nombre del flete es obligatorio.")
-            else:
-                try:
-                    insertar_flete(sb, nombre_nuevo.strip(), float(tarifa_nueva))
-                except Exception as exc:
-                    st.error(f"No se pudo agregar el flete. {texto_error(exc)}")
-                else:
-                    st.session_state["flete_version"] = st.session_state.get("flete_version", 0) + 1
-                    st.cache_data.clear()
-                    avisar("success", f"Tipo de flete {nombre_nuevo.strip()} agregado.")
-        if fletes:
-            st.markdown("**Eliminar flete**")
-            opciones_borrar = {str(item["nombre"]): int(item["id"]) for item in fletes}
-            elegido = st.selectbox("Flete a eliminar", list(opciones_borrar), key="flete_a_eliminar")
-            if st.button("Eliminar flete", key="btn_eliminar_flete"):
-                error = eliminar_flete(sb, opciones_borrar[elegido])
-                if error:
-                    st.error(error)
-                else:
-                    st.cache_data.clear()
-                    avisar("success", f"Flete {elegido} eliminado.")
-
-
-def gestion_catalogo(
-    sb: Client,
-    etiqueta: str,
-    singular: str,
-    registros: list,
-    insertar,
-    actualizar,
-    eliminar,
-    clave: str,
-) -> None:
-    st.caption("Estos nombres se eligen al cargar un producto, así no quedan diferencias de tipeo.")
-    columna_lista, columna_alta = st.columns([1.7, 1], vertical_alignment="top")
-    ordenados = sorted(registros, key=lambda item: str(item.get("nombre") or "").lower())
-    with columna_lista:
-        if not ordenados:
-            st.warning(f"Todavía no hay {etiqueta.lower()}.")
-        else:
-            editor = pd.DataFrame(ordenados)[["id", "nombre"]]
-            version = st.session_state.get(f"{clave}_version", 0)
-            editado = st.data_editor(
-                editor,
-                hide_index=True,
-                num_rows="fixed",
-                width="stretch",
-                height=min(320, 56 + 36 * len(ordenados)),
-                key=f"editor_{clave}_{version}",
-                column_order=["nombre"],
-                column_config={
-                    "nombre": st.column_config.TextColumn(etiqueta, required=True),
-                },
-            )
-            if st.button(f"Guardar {etiqueta.lower()}", type="primary", key=f"guardar_{clave}"):
-                for indice, (_, fila) in enumerate(editado.iterrows()):
-                    error = actualizar(sb, int(ordenados[indice]["id"]), str(fila["nombre"]))
-                    if error:
-                        st.error(error)
-                        return
-                st.session_state[f"{clave}_version"] = version + 1
-                st.cache_data.clear()
-                avisar("success", f"{etiqueta} actualizadas.")
-    with columna_alta:
-        with st.container(border=True):
-            with st.form(f"alta_{clave}", clear_on_submit=True):
-                st.markdown(f"**Nueva {singular}**")
-                nombre_nuevo = st.text_input("Nombre")
-                crear = st.form_submit_button("Agregar", width="stretch")
-            if crear:
-                error = insertar(sb, nombre_nuevo)
-                if error:
-                    st.error(error)
-                else:
-                    st.cache_data.clear()
-                    avisar("success", f"{singular.capitalize()} agregada.")
-            if ordenados:
-                st.markdown(f"**Eliminar {singular}**")
-                opciones = {f"{item['nombre']}": int(item["id"]) for item in ordenados}
-                elegido = st.selectbox(singular.capitalize(), list(opciones), key=f"eliminar_sel_{clave}")
-                if st.button("Eliminar", key=f"eliminar_{clave}"):
-                    error = eliminar(sb, opciones[elegido])
-                    if error:
-                        st.error(error)
-                    else:
-                        st.cache_data.clear()
-                        avisar("success", f"{elegido} eliminada.")
-
-
 def pagina_inventario(sb: Client) -> None:
     fees = leer_configuracion(sb)
     fletes = leer_fletes(sb)
@@ -849,99 +696,64 @@ def pagina_inventario(sb: Client) -> None:
     marcas_catalogo = leer_marcas(sb)
     categorias_catalogo = leer_categorias(sb)
 
-    tab_productos, tab_config = st.tabs(["Lista de Productos", "Configuración General"])
+    mostrar_kpis(
+        [
+            ("Total de productos", str(len(catalogo)), "En el catálogo"),
+            ("Valor de inventario", dinero(valor_inventario), "Costo de las unidades en stock"),
+            ("Unidades", f"{unidades:,}", "Suma del stock actual"),
+            ("Sin stock", str(sin_stock), "Productos en cero"),
+        ]
+    )
+    col_buscar, col_categoria, col_marca, col_estado, col_inactivos = st.columns(
+        [2.1, 1.3, 1.3, 1.4, 1.2],
+        vertical_alignment="bottom",
+    )
+    with col_buscar:
+        busqueda = st.text_input("Buscar", key="inv_buscar", placeholder="Nombre del producto")
+    with col_categoria:
+        categoria = st.selectbox("Categoría", opciones_categoria, key="inv_categoria")
+    with col_marca:
+        marca = st.selectbox("Marca", opciones_marca, key="inv_marca")
+    with col_estado:
+        completitud = st.selectbox("Productos", ["Todos", "Solo Incompletos"], key="inv_completitud")
+    with col_inactivos:
+        st.checkbox("Mostrar inactivos", key="inv_inactivos")
 
-    with tab_productos:
-        mostrar_kpis(
-            [
-                ("Total de productos", str(len(catalogo)), "En el catálogo"),
-                ("Valor de inventario", dinero(valor_inventario), "Costo de las unidades en stock"),
-                ("Unidades", f"{unidades:,}", "Suma del stock actual"),
-                ("Sin stock", str(sin_stock), "Productos en cero"),
-            ]
-        )
-        col_buscar, col_categoria, col_marca, col_estado, col_inactivos = st.columns(
-            [2.1, 1.3, 1.3, 1.4, 1.2],
-            vertical_alignment="bottom",
-        )
-        with col_buscar:
-            busqueda = st.text_input("Buscar", key="inv_buscar", placeholder="Nombre del producto")
-        with col_categoria:
-            categoria = st.selectbox("Categoría", opciones_categoria, key="inv_categoria")
-        with col_marca:
-            marca = st.selectbox("Marca", opciones_marca, key="inv_marca")
-        with col_estado:
-            completitud = st.selectbox("Productos", ["Todos", "Solo Incompletos"], key="inv_completitud")
-        with col_inactivos:
-            st.checkbox("Mostrar inactivos", key="inv_inactivos")
-
-        col_alta, col_importar, col_orden = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
-        with col_alta:
-            if st.button("+ Nuevo producto", type="primary", width="stretch"):
-                dialogo_producto(
-                    sb, fletes, None, fee_recepcion, fee_giro, marcas_catalogo, categorias_catalogo
-                )
-        with col_importar:
-            if st.button("Importar Productos", width="stretch"):
-                dialogo_importar(sb, fletes, productos, fee_recepcion, fee_giro)
-        with col_orden:
-            orden = st.selectbox("Ordenar por", ORDENES_INVENTARIO, key="inv_orden")
-
-        texto = busqueda.strip().lower()
-        filtrados = []
-        for item in catalogo:
-            producto = item["producto"]
-            if texto and texto not in producto["nombre"].lower():
-                continue
-            if categoria != "Todas" and (producto.get("categoria") or "").strip() != categoria:
-                continue
-            if marca != "Todas" and (producto.get("marca") or "").strip() != marca:
-                continue
-            if completitud == "Solo Incompletos" and not producto_incompleto(producto):
-                continue
-            filtrados.append(item)
-        filtrados = ordenar_productos(filtrados, orden)
-
-        st.caption(f"{len(filtrados)} productos")
-
-        if not catalogo:
-            st.warning("Todavía no hay productos cargados.")
-        elif not filtrados:
-            st.warning("Ningún producto coincide con los filtros.")
-        else:
-            tabla_productos(
-                sb, fletes, filtrados, fee_recepcion, fee_giro, marcas_catalogo, categorias_catalogo
+    col_alta, col_importar, col_orden = st.columns([1.3, 1.4, 3.3], vertical_alignment="bottom")
+    with col_alta:
+        if st.button("+ Nuevo producto", type="primary", width="stretch"):
+            dialogo_producto(
+                sb, fletes, None, fee_recepcion, fee_giro, marcas_catalogo, categorias_catalogo
             )
+    with col_importar:
+        if st.button("Importar Productos", width="stretch"):
+            dialogo_importar(sb, fletes, productos, fee_recepcion, fee_giro)
+    with col_orden:
+        orden = st.selectbox("Ordenar por", ORDENES_INVENTARIO, key="inv_orden")
 
-    with tab_config:
-        sub_fletes, sub_marcas, sub_categorias = st.tabs(["Fletes", "Marcas", "Categorías"])
-        with sub_fletes:
-            gestion_fletes(sb, fletes)
-        with sub_marcas:
-            if marcas_catalogo is None:
-                st.warning("No se pudieron leer las marcas. Ejecutá 03_abm_marcas_categorias.sql en Supabase.")
-            else:
-                gestion_catalogo(
-                    sb,
-                    "Marcas",
-                    "marca",
-                    marcas_catalogo,
-                    insertar_marca,
-                    actualizar_marca,
-                    eliminar_marca,
-                    "marcas",
-                )
-        with sub_categorias:
-            if categorias_catalogo is None:
-                st.warning("No se pudieron leer las categorías. Ejecutá 03_abm_marcas_categorias.sql en Supabase.")
-            else:
-                gestion_catalogo(
-                    sb,
-                    "Categorías",
-                    "categoría",
-                    categorias_catalogo,
-                    insertar_categoria,
-                    actualizar_categoria,
-                    eliminar_categoria,
-                    "categorias",
-                )
+    texto = busqueda.strip().lower()
+    filtrados = []
+    for item in catalogo:
+        producto = item["producto"]
+        if texto and texto not in producto["nombre"].lower():
+            continue
+        if categoria != "Todas" and (producto.get("categoria") or "").strip() != categoria:
+            continue
+        if marca != "Todas" and (producto.get("marca") or "").strip() != marca:
+            continue
+        if completitud == "Solo Incompletos" and not producto_incompleto(producto):
+            continue
+        filtrados.append(item)
+    filtrados = ordenar_productos(filtrados, orden)
+
+    st.caption(f"{len(filtrados)} productos")
+
+    if not catalogo:
+        st.warning("Todavía no hay productos cargados.")
+    elif not filtrados:
+        st.warning("Ningún producto coincide con los filtros.")
+    else:
+        tabla_productos(
+            sb, fletes, filtrados, fee_recepcion, fee_giro, marcas_catalogo, categorias_catalogo
+        )
+

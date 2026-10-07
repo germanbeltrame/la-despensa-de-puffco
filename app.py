@@ -12,6 +12,7 @@ from ui import (
     panel_clave_cliente,
 )
 from views.catalogo import pagina_catalogo
+from views.configuracion import pagina_configuracion
 from views.clientes import pagina_clientes
 from views.cuentas_corrientes import pagina_cuentas
 from views.gastos import pagina_gastos
@@ -39,6 +40,7 @@ VISTAS = {
     "Cuentas Corrientes": pagina_cuentas,
     "Gastos Operativos": pagina_gastos,
     "Reportes": pagina_reportes,
+    "Configuración": pagina_configuracion,
 }
 
 
