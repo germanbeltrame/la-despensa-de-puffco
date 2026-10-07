@@ -149,11 +149,15 @@ def pagina_reportes(sb: Client) -> None:
         del_periodo, inicio, fin, marca, indice, por_producto, guardadas
     )
 
-    pestana_productos, pestana_evolucion = st.tabs(["Productos y reposición", "Evolución histórica"])
+    pestana_productos, pestana_evolucion, pestana_gastos = st.tabs(
+        ["Productos y reposición", "Evolución histórica", "Detalle de Gastos"]
+    )
     with pestana_productos:
         mostrar_productos(filas, meses)
     with pestana_evolucion:
         mostrar_evolucion(evolucion)
+    with pestana_gastos:
+        mostrar_detalle_gastos(gastos)
 
 
 def pasa_tipo(cliente: dict | None, tipo: str) -> bool:
@@ -413,6 +417,46 @@ def evolucion_mensual(
             }
         )
     return pd.DataFrame(filas)
+
+
+def mostrar_detalle_gastos(gastos: list) -> None:
+    if not gastos:
+        st.info("No hay gastos operativos en este período.")
+        return
+    ordenados = sorted(gastos, key=_marca_fecha, reverse=True)
+    tabla = pd.DataFrame(
+        [
+            {
+                "Fecha": _texto_fecha(item.get("fecha")),
+                "Concepto": item.get("concepto") or "",
+                "Notas": item.get("observaciones") or "",
+                "Monto (USD)": float(item.get("monto_usd") or 0),
+            }
+            for item in ordenados
+        ]
+    )
+    st.dataframe(
+        tabla,
+        width="stretch",
+        hide_index=True,
+        column_config={"Monto (USD)": columna_usd("Monto (USD)")},
+    )
+
+
+def _marca_fecha(gasto: dict) -> datetime:
+    momento = parse_fecha(gasto.get("fecha"))
+    if momento.tzinfo is not None:
+        return momento.astimezone(ART).replace(tzinfo=None)
+    return momento
+
+
+def _texto_fecha(valor) -> str:
+    momento = parse_fecha(valor)
+    if momento.year <= 1:
+        return ""
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=ART)
+    return momento.astimezone(ART).strftime("%d/%m/%Y")
 
 
 def mostrar_evolucion(tabla: pd.DataFrame) -> None:
