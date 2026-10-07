@@ -470,7 +470,6 @@ def importar_productos(
         calcular = True
         costo = costo_unitario(fob, peso, precio_kg, fee_recepcion, fee_giro)
         stock_base = int(existente.get("stock_actual") or 0) if existente else 0
-        imagen = url or (existente.get("imagen_url") if existente else None) or None
         datos = {
             "nombre": existente["nombre"] if existente else nombre,
             "marca": texto_celda(fila["Marca"], "PUFFCO") or "PUFFCO",
@@ -484,10 +483,11 @@ def importar_productos(
             "precio_puntero_usd": round(numero_celda(fila["Precio_Puntero"]), 2),
             "precio_distro_usd": round(numero_celda(fila["Precio_Distro"]), 2),
             "stock_actual": max(0, stock_base + ingreso),
-            "imagen_url": imagen,
             "activo": True if existente is None else existente.get("activo") is not False,
             "incompleto": peso == 0 or fob <= 0,
         }
+        if existente is None:
+            datos["imagen_url"] = url or None
         asegurar_en_catalogo(sb, "marcas", datos["marca"])
         asegurar_en_catalogo(sb, "categorias", datos["categoria"])
         error = guardar_producto(sb, datos, None if existente is None else int(existente["id"]))
