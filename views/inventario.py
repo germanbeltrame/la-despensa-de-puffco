@@ -46,7 +46,6 @@ COLUMNAS_PLANTILLA = [
     "Precio_Puntero",
     "Precio_Distro",
     "Stock_Ingreso",
-    "URL_Imagen",
 ]
 
 
@@ -168,7 +167,6 @@ def excel_productos(productos: list, fletes: list) -> bytes:
                 "Precio_Distro": float(producto.get("precio_distro_usd") or 0),
                 "Stock_Ingreso": 0,
                 "Stock_Actual": int(producto.get("stock_actual") or 0),
-                "URL_Imagen": producto.get("imagen_url") or "",
             }
         )
     tabla = pd.DataFrame(filas, columns=[*COLUMNAS_PLANTILLA, "Stock_Actual"])
@@ -462,7 +460,6 @@ def importar_productos(
         peso = round(numero_celda(fila["Peso_KG"]), 3)
         precio_kg = round(numero_celda(fila["Precio_KG"]), 2)
         ingreso = int(round(numero_celda(fila["Stock_Ingreso"])))
-        url = texto_celda(fila["URL_Imagen"])
         flete_id = flete_de_tarifa(sb, fletes, precio_kg)
         if flete_id is None:
             errores.append(f"Fila {numero}: no se pudo guardar el precio por kilo de {nombre}.")
@@ -486,8 +483,6 @@ def importar_productos(
             "activo": True if existente is None else existente.get("activo") is not False,
             "incompleto": peso == 0 or fob <= 0,
         }
-        if existente is None:
-            datos["imagen_url"] = url or None
         asegurar_en_catalogo(sb, "marcas", datos["marca"])
         asegurar_en_catalogo(sb, "categorias", datos["categoria"])
         error = guardar_producto(sb, datos, None if existente is None else int(existente["id"]))
